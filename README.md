@@ -55,3 +55,4 @@ The CPU-parallel version focuses on parallelizing operations over agents, especi
 ├── include/          # Header files
 ├── scripts/          # Benchmark and plotting scripts
 └── results/         
+```
