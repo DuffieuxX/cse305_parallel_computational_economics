@@ -81,93 +81,103 @@ At each time step, the simulation performs the following operations:
    The simulation computes the current log-return, the deviation between market price and fundamental value, and the majority opinion among noise traders.
 
 3. **Update agent states.**  
-   Transitions follow the Lux--Marchesi form
+   Transitions follow the Lux-Marchesi form:
 
-   \[
+   $$
    \mathbb{P}(i \to j \text{ during } \Delta t)
    =
-   \nu_{ij}\exp(U_{ij}(t))\Delta t,
-   \]
+   \nu_{ij}\exp(U_{ij}(t))\Delta t
+   $$
 
-   where \(\nu_{ij}\) is a revision frequency and \(U_{ij}(t)\) is the forcing term.
+   where $\nu_{ij}$ is a revision frequency and $U_{ij}(t)$ is the forcing term.
 
-   For opinion changes among noise traders, let
+   For opinion changes among noise traders, let:
 
-   \[
-   x_t = \frac{n_+(t)-n_-(t)}{n_+(t)+n_-(t)},
+   $$
+   x_t =
+   \frac{n_+(t)-n_-(t)}{n_+(t)+n_-(t)},
    \qquad
-   r_t = \log\left(\frac{p_t}{p_{t-1}}\right),
-   \]
+   r_t =
+   \log\left(\frac{p_t}{p_{t-1}}\right)
+   $$
 
-   where \(x_t\) measures market sentiment and \(r_t\) is the current price trend. We use
+   where $x_t$ measures market sentiment and $r_t$ is the current price trend. We use:
 
-   \[
+   $$
    U_{-\to +}(t)=a_1x_t+a_2r_t,
    \qquad
-   U_{+\to -}(t)=-a_1x_t-a_2r_t.
-   \]
+   U_{+\to -}(t)=-a_1x_t-a_2r_t
+   $$
 
-   For switches between noise traders and fundamentalists, transitions are driven by relative profitability. We use the proxies
+   For switches between noise traders and fundamentalists, transitions are driven by relative profitability. We use the proxies:
 
-   \[
-   \pi_+(t)=r_t,\qquad
-   \pi_-(t)=r_{\mathrm{alt}}-r_t,\qquad
-   \pi_f(t)=\delta\left|\log\left(\frac{p_{f,t}}{p_t}\right)\right|,
-   \]
+   $$
+   \pi_+(t)=r_t,
+   \qquad
+   \pi_-(t)=r_{\mathrm{alt}}-r_t,
+   \qquad
+   \pi_f(t)=
+   \delta
+   \left|
+   \log\left(\frac{p_{f,t}}{p_t}\right)
+   \right|
+   $$
 
-   with \(0<\delta<1\). The forcing terms are profit differences:
+   with $0<\delta<1$. The forcing terms are profit differences:
 
-   \[
-   U_{f\to +}=\pi_+-\pi_f,\quad
-   U_{+\to f}=\pi_f-\pi_+,
-   \]
+   $$
+   U_{f\to +}=\pi_+-\pi_f,
+   \qquad
+   U_{+\to f}=\pi_f-\pi_+
+   $$
 
-   \[
-   U_{f\to -}=\pi_- - \pi_f,\quad
-   U_{-\to f}=\pi_f-\pi_-.
-   \]
+   $$
+   U_{f\to -}=\pi_- - \pi_f,
+   \qquad
+   U_{-\to f}=\pi_f-\pi_-
+   $$
 
    Agents are therefore more likely to switch toward the state with the higher current profitability proxy.
-
 
 4. **Compute excess demand.**  
    Aggregate excess demand is the sum of noise-trader demand and fundamentalist demand:
 
-   \[
-   ED_t = ED_t^{n} + ED_t^{f}.
-   \]
+   $$
+   ED_t = ED_t^n + ED_t^f
+   $$
 
-   Noise traders have a constant average trading volume \(q_n\), so their demand is determined by the difference between optimistic and pessimistic traders:
+   Noise traders have a constant average trading volume $q_n$, so their demand is determined by the difference between optimistic and pessimistic traders:
 
-   \[
-   ED_t^{n} = q_n\left(n_+(t)-n_-(t)\right).
-   \]
+   $$
+   ED_t^n = q_n\left(n_+(t)-n_-(t)\right)
+   $$
 
    Fundamentalists trade against mispricing. We use a log-deviation from the fundamental value:
 
-   \[
-   ED_t^{f} = q_f n_f(t)\log\left(\frac{p_{f,t}}{p_t}\right).
-   \]
+   $$
+   ED_t^f =
+   q_f n_f(t)
+   \log\left(\frac{p_{f,t}}{p_t}\right)
+   $$
 
-   Hence, if \(p_t < p_{f,t}\), fundamentalists buy; if \(p_t > p_{f,t}\), they sell.
-
-
+   Hence, if $p_t < p_{f,t}$, fundamentalists buy; if $p_t > p_{f,t}$, they sell.
 
 5. **Update market price.**  
    The market price changes endogenously as a response to excess demand. We use a log-price impact rule:
 
-   \[
+   $$
    p_{t+1}
    =
-   p_t \exp\left(\beta \frac{ED_t}{N}\right),
-   \]
+   p_t
+   \exp\left(
+   \beta \frac{ED_t}{N}
+   \right)
+   $$
 
-   where \(\beta\) is the price-impact parameter and \(N\) is the total number of agents. Hence, positive excess demand increases the price, while negative excess demand decreases it. This multiplicative rule keeps prices strictly positive.
+   where $\beta$ is the price-impact parameter and $N$ is the total number of agents. Hence, positive excess demand increases the price, while negative excess demand decreases it. This multiplicative rule keeps prices strictly positive.
 
    This price-update rule is our discrete-time implementation of the excess-demand mechanism described in the paper.
 
 
 6. **Record outputs.**  
    The simulation stores prices, fundamental values, returns, agent counts, and excess demand for later analysis and benchmarking.
-
-The main parallelization challenge is that agent updates are naturally local, but market variables such as excess demand, agent counts, and price updates are global. The CPU-parallel implementation therefore has to split agents across threads, compute thread-local quantities, and then reduce them into global market variables at each time step.
