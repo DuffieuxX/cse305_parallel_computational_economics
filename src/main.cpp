@@ -40,8 +40,6 @@ struct Params {
     double discount = 0.5;
     double profit_sensitivity = 100.0;
 
-    double max_switch_prob = 0.5;
-
     std::string output = "results/simulation.csv";
 };
 
@@ -73,12 +71,6 @@ struct Probs {
 // #2 Utility functions
 
 double switch_probability(double nu, double U, double dt) {
-    if (U < -20.0){
-        U = -20.0;
-    }
-    if (U > 20.0){
-        U = 20.0;
-    } 
     return nu * std::exp(U) * dt;
 }
 
@@ -97,20 +89,28 @@ std::vector<Agent> initialize_agents(const Params& params, std::mt19937& rng) {
     std::vector<Agent> agents;
     agents.reserve(params.N);
 
-    for (int i = 0; i < params.N; ++i) {
-        double u = uniform01(rng);
+    int n_plus = params.N / 3;
+    int n_minus = params.N / 3;
+    int n_fund = params.N - n_plus - n_minus;
 
-        if (u < 1.0 / 3.0) {
-            agents.push_back(Agent::Optimist);
-        } else if (u < 2.0 / 3.0) {
-            agents.push_back(Agent::Pessimist);
-        } else {
-            agents.push_back(Agent::Fundamentalist);
-        }
+    for (int i = 0; i < n_plus; ++i) {
+        agents.push_back(Agent::Optimist);
     }
+
+    for (int i = 0; i < n_minus; ++i) {
+        agents.push_back(Agent::Pessimist);
+    }
+
+    for (int i = 0; i < n_fund; ++i) {
+        agents.push_back(Agent::Fundamentalist);
+    }
+
+    std::shuffle(agents.begin(), agents.end(), rng);
 
     return agents;
 }
+
+
 
 Counts count_agents(const std::vector<Agent>& agents) {
     
@@ -211,6 +211,8 @@ void update_agents(std::vector<Agent>& agents, const Probs& probs, std::mt19937&
     }
 }
 
+
+
 // #6 Excess demand and price update
 
 double excess_demand(const Params& params, const Market& market, const Counts& counts) {
@@ -224,6 +226,9 @@ double excess_demand(const Params& params, const Market& market, const Counts& c
 double update_price(const Params& params, double price, double excess_demand_value) {
     return price * std::exp( params.beta * excess_demand_value / static_cast<double>(params.N));
 }
+
+
+
 
 
 
@@ -338,7 +343,7 @@ int main(int argc, char* argv[]) {
         std::string arg = argv[i];
         if (arg == "--agents" && i + 1 < argc) {
             params.N = std::stoi(argv[++i]);
-        } 
+        }
         else if (arg == "--steps" && i + 1 < argc) {
             params.T = std::stoi(argv[++i]);
         } 
