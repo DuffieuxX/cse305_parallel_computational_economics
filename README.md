@@ -111,7 +111,13 @@ And the fraction of chartists in the population being
 z(t)=\frac{n_c(t)}{N}.
 ```
 
-The price trend `dp/dt` is estimated from the recent price path rather than from a single micro-step. Following Lux and Marchesi, we use the average price change over `[t - 0.2, t)`, which corresponds to 20 micro-steps when `dt = 0.01`.
+The price trend $\dot p(t)$ corresponds to $dp/dt$ in the continuous-time notation. It is estimated from the recent price path. Following Lux and Marchesi, we use the average price change over `[t - 0.2, t)`, which corresponds to 20 micro-steps since $dt = 0.01$:
+
+```math
+\dot p(t)
+\approx
+\frac{p(t)-p(t-0.2)}{0.2}
+```
 
 
 ### Step 3. Opinion switch between optimistic and pessimistic chartists
@@ -311,9 +317,10 @@ p_{t+\Delta t}
 =
 p_t
 \exp\left(
-\beta \frac{ED_t}{N}
-\right) 
+\beta \frac{ED_t}{N}\Delta t
+\right)
 ```
+
 Equivalently, excess demand changes the log-price by `beta * ED_t / N`, so positive excess demand increases the price and negative excess demand decreases it.
 
 ### Step 7. Recorded outputs
