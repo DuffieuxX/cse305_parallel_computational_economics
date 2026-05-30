@@ -8,45 +8,32 @@
 #include <algorithm>
 #include <filesystem>
 
-// #1 Data structure 
 
+// #1 Data structure 
 
 struct Params {
 
-    int N = 10000; //number of agents 
+    int N = 1000; //number of agents 
     int T = 1000; // number of time periods
     int seed = 42;
-    
     double dt = 1.0; //  period increments for strategy re-evaluation 
-
     double p0 = 100.0; // initial price 
     double pf0 = 100.0; // initial fundamental value
-
     double initial_cash=10000.0;//average initial cash of agents 
     double initial_inventory=100.0;//average initial inventory of agents 
 
     double sigma_pf = 0.005; // variance of log return of fundamental value
     double beta = 0.01; // 
-
-    double nu_opinion = 0.02; //frequency of re-evaluating opinion for chartists
+    double nu_opinion = 0.05; //frequency of re-evaluating opinion for chartists
     double nu_strategy = 0.01; //frequency of re-evaluating strategy (switches btw chartists and fundamentalists)
-
-    double a_herding = 1.5; //influence of herding on chartist behaviour
-    double a_trend = 2.0; // influence of temporary price trend on chartist behaviour 
-
+    double a_herding = 1.0; //influence of herding on chartist behaviour
+    double a_trend = 1.0; // influence of temporary price trend on chartist behaviour 
     double r_alt = 0.0; //return of alternative investments for fundamentalists 
     double discount = 0.5; // discount on profits from arbitrage for fundamentalists
-    double profit_sensitivity = 10.0; // profit sensitivity of fundamentalists for strategy switching
-
-
-    double order_size_min_chartist=5.0; //minimum order size of chartists
-    double order_size_max_chartist=15.0; //maximium order size of chartists 
-    
+    double profit_sensitivity = 2.0; // profit sensitivity of fundamentalists for strategy switching
+    double order_size_chartist = 10.0; // order size of chartists     
     double sigma_aggressiveness=0.02; // variance of aggressiveness
-
     double m_min=0.005; // minimum threshold on m_t for fundamentalists to trade
-    double gamma_f=1.0; //sensitivity of order size of fundamentalists on m_t
-
 
     std::string output = "results/simulation.csv";
 };
@@ -95,7 +82,7 @@ type(type),
 agent_id(agent_id),
 cash(params.initial_cash),
 asset_inventory(params.initial_inventory),
-chartist_order_size(uniform(rng,params.order_size_min_chartist,params.order_size_max_chartist)),
+chartist_order_size(uniform(rng, 0.5 * params.order_size_chartist, 1.5 * params.order_size_chartist)),
 aggressiveness(half_normal(rng,0,params.sigma_aggressiveness))
 {}
 
@@ -196,7 +183,7 @@ Order* Agent::new_order(Market market, Params params){
         if(m_t>=params.m_min){
             bool buy=true;
             double limit_price= market.pf*(1+this->aggressiveness/4);
-            this->fundamentalist_order_size = this->chartist_order_size*(1+params.gamma_f*std::abs(m_t));
+            this->fundamentalist_order_size = this->chartist_order_size*(1+std::abs(m_t));
             double quantity = std::min(this->fundamentalist_order_size, this->cash/limit_price);
 
             Order* new_order= new Order(buy,quantity,limit_price,this->agent_id);
@@ -207,21 +194,20 @@ Order* Agent::new_order(Market market, Params params){
         if(m_t<=-params.m_min){
             bool buy=false;
             double limit_price= market.pf*(1-this->aggressiveness/4);
-            this->fundamentalist_order_size = this->chartist_order_size*(1+params.gamma_f*std::abs(m_t));
+            this->fundamentalist_order_size = this->chartist_order_size*(1+std::abs(m_t));
             double quantity = std::min(this->fundamentalist_order_size, this->asset_inventory);
 
             Order* new_order= new Order(buy,quantity,limit_price,this->agent_id);
             return new_order;
         }
 
-        if(m_t< std::abs(params.m_min)){
+        else{
             Order* new_order= new Order(true,0,0,this->agent_id);
             return new_order;
-
         }
     }
 
-    }
+}
 
 
 
@@ -231,52 +217,37 @@ void Order_book::add_order(std::vector<Agent*> agents, Agent* agent, Market mark
     Order* new_order = agent->new_order(market,params);
     bool buy =new_order->buy;
     
-
     if(buy){
         
         Order* previous_ask = this->ask_head;
         Order* current_ask=previous_ask->next;
         
         while(new_order->quantity>0 && current_ask!=nullptr){
+            if(current_ask->price<=new_order->price){
+                double price_trade = current_ask->price;
+                double quantity_trade = std::min(current_ask->quantity, new_order->quantity);
 
-        while(current_ask->price>new_order->price && current_ask->next!=nullptr){
-        previous_ask=current_ask;
-        current_ask=current_ask->next;
-        }
+                new_order->quantity -= quantity_trade;
+                current_ask-> quantity -= quantity_trade; 
 
-        if(current_ask->price<=new_order->price){
-            double price_trade = current_ask->price;
-            double quantity_trade = std::min(current_ask->quantity, new_order->quantity);
+                agents[current_ask->agent_id]->asset_inventory-=quantity_trade;
+                agents[current_ask->agent_id]->cash+=quantity_trade*price_trade;
 
-            new_order->quantity -= quantity_trade;
-            current_ask-> quantity -= quantity_trade; 
+                agent->asset_inventory+=quantity_trade;
+                agent->cash-=quantity_trade*price_trade;
 
-            
-            
-            agents[current_ask->agent_id]->asset_inventory-=quantity_trade;
-            agents[current_ask->agent_id]->cash+=quantity_trade*price_trade;
+                this->volume+=quantity_trade;
+                this->volume_weighted_sum+=quantity_trade * price_trade;
 
-            agent->asset_inventory+=quantity_trade;
-            agent->cash-=quantity_trade*price_trade;
-
-            this->volume+=quantity_trade;
-            this->volume_weighted_sum+=quantity_trade * price_trade;
-
-
-            if(current_ask->quantity==0){
-                previous_ask->next=current_ask->next;
-                current_ask=current_ask->next;
-                }    
+                if(current_ask->quantity==0){
+                    previous_ask->next=current_ask->next;
+                    current_ask=current_ask->next;
+                    }    
+                }
+            else {
+                break;
             }
-
-        else{
-            break;
         }
-
-        }
-
-       
-
         if(new_order->quantity>0){
 
         Order* previous_bid = this->bid_head;
@@ -296,28 +267,17 @@ void Order_book::add_order(std::vector<Agent*> agents, Agent* agent, Market mark
             previous_bid->next=new_order;
             new_order->next=current_bid;
         }
-
         else{
-    
             current_bid->next=new_order;
-            
         }
         }
-
-
-
     }
-
 
 if(!buy){
     Order* previous_bid = this->bid_head;
     Order* current_bid = previous_bid->next;
 
     while(new_order->quantity > 0 && current_bid != nullptr){
-        while(current_bid->price < new_order->price && current_bid->next != nullptr){
-            previous_bid = current_bid;
-            current_bid = current_bid->next;
-        }
         if(current_bid->price >= new_order->price){
             double price_trade = current_bid->price;
             double quantity_trade = std::min(current_bid->quantity, new_order->quantity);
@@ -334,12 +294,10 @@ if(!buy){
             this->volume+=quantity_trade;
             this->volume_weighted_sum+=quantity_trade * price_trade;
 
-
             if(current_bid->quantity == 0){
                 previous_bid->next = current_bid->next;
                 current_bid = current_bid->next;
             }
-
         } else {
             break;
         }
@@ -353,7 +311,6 @@ if(!buy){
             previous_ask->next=new_order;
             return;
         }
-
         while(current_ask->price < new_order->price && current_ask->next != nullptr){
             previous_ask = current_ask;
             current_ask = current_ask->next;
@@ -366,11 +323,7 @@ if(!buy){
         }
     }
 }
-
 }
-
-
-
 
 
 // #2 Utility functions
@@ -411,6 +364,9 @@ std::vector<Agent*> initialize_agents(const Params& params, std::mt19937& rng) {
         agents.push_back(new_agent);
     }
     std::shuffle(agents.begin(), agents.end(), rng);
+    for(int i = 0; i < params.N; ++i){
+        agents[i]->agent_id = i;
+    }
     return agents;
 }
 
@@ -516,8 +472,6 @@ double update_price(Order_book& order_book) {
     std::cerr<<"Volume traded= "<<order_book.volume<<"\n";
     return order_book.volume_weighted_sum/order_book.volume;
 
-
-
 }
 
 
@@ -531,7 +485,6 @@ double update_price(Order_book& order_book) {
 // #7 Output (time,price,fundamental_value,log_return,fundamental_shock,log_mispricing,sentiment,optimists,pessimists,fundamentalists,excess_demand)
 
 void write_header(std::ofstream& out) {
-    
     out << "time,"
         << "price,"
         << "fundamental_value,"
@@ -541,30 +494,35 @@ void write_header(std::ofstream& out) {
         << "sentiment,"
         << "optimists,"
         << "pessimists,"
-        << "fundamentalists,"
+        << "fundamentalists"
         << "\n";
 }
 
 void write_row(
     std::ofstream& out,
     int t,
-    const Market& market,
+    Market market,
     double new_price,
     double epsilon,
-    const Counts& counts) {
+    Counts counts
+) {
     double log_return = std::log(new_price / market.p);
     double log_mispricing = std::log(market.pf / market.p);
-    double x = sentiment(counts);
+    double sentiment =
+        (double)(counts.nb_optimists - counts.nb_pessimists)
+        / (double)(counts.nb_optimists + counts.nb_pessimists);
+
     out << t << ","
         << new_price << ","
         << market.pf << ","
         << log_return << ","
         << epsilon << ","
         << log_mispricing << ","
-        << x << ","
-        << counts.nb_optimists<< ","
+        << sentiment << ","
+        << counts.nb_optimists << ","
         << counts.nb_pessimists << ","
-        << counts.nb_fundamentalists << ",";
+        << counts.nb_fundamentalists
+        << "\n";
 }
 
 // #8 Simulation loop
