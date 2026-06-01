@@ -1,7 +1,7 @@
 #include "market.hpp"
 
 // #3 initialization and counting (n_+(t), n_-(t), n_f(t) and x_t)
-std::vector<Agent*> initialize_agents(const Params& params, std::mt19937& rng) {
+std::vector<Agent*> initialize_agents( Params& params, std::mt19937& rng) {
     
     std::vector<Agent*> agents;
     agents.reserve(params.N);
@@ -30,7 +30,7 @@ std::vector<Agent*> initialize_agents(const Params& params, std::mt19937& rng) {
     return agents;
 }
 
-Counts count_agents(const std::vector<Agent*>& agents) {
+Counts count_agents( std::vector<Agent*>& agents) {
     Counts counts;
     for (Agent* agent : agents) {
         if (agent->type == Agent::Agent_type::Optimist) {
@@ -44,7 +44,7 @@ Counts count_agents(const std::vector<Agent*>& agents) {
     return counts;
 }
 
-double sentiment(const Counts& counts) {
+double sentiment( Counts& counts) {
     int noise_traders = counts.nb_optimists + counts.nb_pessimists;
     if (noise_traders == 0) {
         return 0.0;
@@ -55,7 +55,7 @@ double sentiment(const Counts& counts) {
 
 // #4 Computing Transition probabilities
 
-Probs compute_probabilities(const Params& params, const Market& market, const Counts& counts) {
+Probs compute_probabilities( Params& params,  Market& market,  Counts& counts) {
     Probs probs;
     double r = std::log(market.p / market.p_prev);
     double x = sentiment(counts);
@@ -81,7 +81,7 @@ Probs compute_probabilities(const Params& params, const Market& market, const Co
 }
 
 // #5 Update agents
-void update_agents(std::vector<Agent*>& agents, const Probs& probs, std::mt19937& rng) {
+void update_agents(std::vector<Agent*>& agents, Probs& probs, std::mt19937& rng) {
     
     for (Agent* agent : agents) {
         
@@ -117,22 +117,33 @@ void update_agents(std::vector<Agent*>& agents, const Probs& probs, std::mt19937
     }
 }
 
+//6 New order generation: 
 
-// #6 Price update
+
+void add_all_new_orders(Market& market, Params& params, std::vector<Agent*>& agents, Order_book& order_book){
+    for (int i=0; i<params.N;i++){
+            Order* new_order = agents[i]->new_order(std::ref(market), std::ref(params));
+            order_book.add_order( std::ref(agents), new_order);
+        }
+}
+
+
+
+
+// #7 Price update
 
 double update_price(Order_book& order_book) {
     if(order_book.volume==0){
         return 100;
     }
 
-    std::cerr<<"Volume traded= "<<order_book.volume<<"\n";
     return order_book.volume_weighted_sum/order_book.volume;
 
 }
 
 
 // Simulation loop
-void run_simulation(const Params& params) {
+SimTimes run_simulation( Params& params) {
     
     std::mt19937 rng(params.seed);
     std::normal_distribution<double> normal_dist(0.0, params.sigma_pf);
@@ -147,27 +158,52 @@ void run_simulation(const Params& params) {
 
     if (!out.is_open()) {
         std::cerr << "Error: could not open output file " << params.output << "\n";
-        return;
+        try{
+            throw 1 ;
+        }
+
+        catch(int errorCode){
+            std::cout<<"Error:"<<errorCode;
+
+        }
+        
     }
 
     write_header(out);
 
+    double time_counting  = 0;
+    double time_updating  = 0;
+    double time_adding = 0;
+
     for (int t = 0; t < params.T; ++t) {
-        Order_book order_book =Order_book();
+        std::cerr<<"Period t= "<<t<<"\n";
+        Order_book order_book = Order_book(params);
         double epsilon = normal_dist(rng);
         market.pf *= std::exp(epsilon);
         
+        auto t0 = std::chrono::high_resolution_clock::now();
         Counts counts_before = count_agents(agents);
+        time_counting += std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t0).count();
 
         Probs probs = compute_probabilities(params, market, counts_before);
 
+        auto t1 = std::chrono::high_resolution_clock::now();
         update_agents(agents, probs, rng);
+        time_updating += std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t1).count();
 
+        auto t2 = std::chrono::high_resolution_clock::now();
         Counts counts_after = count_agents(agents);
+        time_counting += std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t2).count();
 
-        for (int i=0; i<params.N;i++){
-            order_book.add_order( agents, agents[i], market, params);
-        }
+
+        auto t3 = std::chrono::high_resolution_clock::now();
+        add_all_new_orders(std::ref(market),std::ref (params),std::ref (agents),std::ref(order_book));
+        time_adding += std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t3).count();
+
         double new_price = update_price(std::ref(order_book));
 
         if (!std::isfinite(new_price) || new_price <= 0.0) {
@@ -180,13 +216,34 @@ void run_simulation(const Params& params) {
 
         market.p_prev = market.p;
         market.p = new_price;
-
-
     }
     for(Agent* a : agents) delete a;
 
     out.close();
-
     std::cout << "Simulation completed.\n";
-    std::cout << "Output written to: " << params.output << "\n";
+
+
+    SimTimes simtimes;
+    simtimes.adding=time_adding;
+    simtimes.counting=time_counting;
+    simtimes.updating=time_updating;
+    
+    return simtimes;
+    
 }
+        
+        
+
+        
+     
+        
+
+       
+
+
+        
+
+
+  
+
+ 

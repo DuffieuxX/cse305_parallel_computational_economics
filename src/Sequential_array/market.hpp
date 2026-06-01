@@ -11,7 +11,7 @@
 // #1 Data structure 
 struct Params {
 
-    int N = 1000; //number of agents 
+    int N = 100000; //number of agents 
     int T = 1000; // number of time periods
     int seed = 42;
     double dt = 1.0; //  period increments for strategy re-evaluation 
@@ -47,9 +47,9 @@ struct Agent{
     double chartist_order_size; // order size when the agent is a chartist 
     double aggressiveness; // aggressiveness of agent when deciding order price 
     
-    Agent(Agent_type type,int agent_id,Params params,std::mt19937& rng);
+    Agent(Agent_type type,int agent_id,Params& params,std::mt19937& rng);
     
-    Order* new_order(Market market, Params params);
+    Order* new_order(Market& market, Params& params);
 };
 
 
@@ -82,22 +82,29 @@ struct Order{
     double quantity;
     double price; 
     int agent_id; 
-    Order* next; 
-
     Order(bool buy, double quantity, double price, int agent_id);
 };
 
+
 struct Order_book {
-    Order* bid_head;
-    Order* ask_head;
+    std::vector<Order*> bids;
+    std::vector<Order*> asks;
 
     double volume_weighted_sum=0;
     double volume=0;
 
-    Order_book();
+    Order_book( Params& params);
     ~Order_book();
-    void add_order(std::vector<Agent*>& agents, Agent* agent, const Market& market, const Params& params);
+
+    void add_order(std::vector<Agent*>& agents, Order* order);
 };
+
+struct SimTimes {
+    double counting = 0;
+    double updating = 0;
+    double adding   = 0;
+};
+
 
 
 
@@ -114,7 +121,7 @@ void write_row(
 );
 
 // declarations of main simulation loop
-void run_simulation(const Params& params);
+SimTimes run_simulation( Params& params);
 
 // Utility function declarations
 double uniform(std::mt19937& rng, double min, double max);
@@ -124,22 +131,24 @@ double switch_probability(double nu, double U, double dt);
 double uniform01(std::mt19937& rng);
 
 // Model function declarations
-std::vector<Agent*> initialize_agents(const Params& params, std::mt19937& rng);
+std::vector<Agent*> initialize_agents( Params& params, std::mt19937& rng);
 
-Counts count_agents(const std::vector<Agent*>& agents);
+Counts count_agents( std::vector<Agent*>& agents);
 
-double sentiment(const Counts& counts);
+double sentiment( Counts& counts);
 
 Probs compute_probabilities(
-    const Params& params,
-    const Market& market,
-    const Counts& counts
+     Params& params,
+     Market& market,
+     Counts& counts
 );
 
 void update_agents(
     std::vector<Agent*>& agents,
-    const Probs& probs,
+     Probs& probs,
     std::mt19937& rng
 );
 
-double update_price(Order_book& order_book, const Market& market);
+double update_price(Order_book& order_book);
+
+

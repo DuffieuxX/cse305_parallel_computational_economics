@@ -10,7 +10,7 @@ Order::Order(bool buy, double quantity, double price, int agent_id)
       next(nullptr)
 {}
 
-Agent::Agent(Agent_type type,int agent_id,Params params,std::mt19937& rng):
+Agent::Agent(Agent_type type,int agent_id,Params& params,std::mt19937& rng):
 type(type),
 agent_id(agent_id),
 cash(params.initial_cash),
@@ -20,7 +20,7 @@ aggressiveness(half_normal(rng,0,params.sigma_aggressiveness))
 {}
 
 
-Order_book::Order_book() {
+Order_book::Order_book(Params& params) {
     this->bid_head= new Order(false,0,std::numeric_limits<double>::max(),-1);
     this->ask_head=new Order(false,0,std::numeric_limits<double>::min(),-1);
 }
@@ -43,7 +43,7 @@ Order_book::~Order_book() {
 
 
 
-Order* Agent::new_order(Market market, Params params){
+Order* Agent::new_order(Market& market, Params& params){
 
     if(this->type==Agent::Agent_type::Optimist){
         double limit_price =market.p*(1+this->aggressiveness);
@@ -96,8 +96,7 @@ Order* Agent::new_order(Market market, Params params){
 
 }
 
-void Order_book::add_order(std::vector<Agent*>& agents, Agent* agent, const Market& market, const Params& params){
-    Order* new_order = agent->new_order(market,params);
+void Order_book::add_order(std::vector<Agent*>& agents, Order* new_order){
     bool buy =new_order->buy;
     
     if(buy){
@@ -117,8 +116,8 @@ void Order_book::add_order(std::vector<Agent*>& agents, Agent* agent, const Mark
                 agents[current_ask->agent_id]->asset_inventory-=quantity_trade;
                 agents[current_ask->agent_id]->cash+=quantity_trade*price_trade;
 
-                agent->asset_inventory+=quantity_trade;
-                agent->cash-=quantity_trade*price_trade;
+                agents[new_order->agent_id]->asset_inventory+=quantity_trade;
+                agents[new_order->agent_id]->cash-=quantity_trade*price_trade;
 
                 this->volume+=quantity_trade;
                 this->volume_weighted_sum+=quantity_trade * price_trade;
@@ -172,8 +171,8 @@ if(!buy){
             agents[current_bid->agent_id]->asset_inventory += quantity_trade;
             agents[current_bid->agent_id]->cash -= quantity_trade * price_trade;
 
-            agent->asset_inventory -= quantity_trade;
-            agent->cash += quantity_trade * price_trade;
+            agents[new_order->agent_id]->asset_inventory -= quantity_trade;
+            agents[new_order->agent_id]->cash += quantity_trade * price_trade;
 
             this->volume+=quantity_trade;
             this->volume_weighted_sum+=quantity_trade * price_trade;
