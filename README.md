@@ -1,4 +1,4 @@
-# CSE305 Parallel Computational Economics
+# Project README - (CSE305) Concurrent and Distributed Computing
 
 Within this repository, you will find our project on parallel computational economics as part of the Concurrent and Distributed Computing (CSE305) course. The project is inspired by the agent-based financial market models of Lux and Marchesi defined in their paper *Scaling and criticality in a stochastic multi-agent model of a financial market* (1999) and *Volatility clustering in financial markets: a microsimulation of interacting agents* (2000).
 
