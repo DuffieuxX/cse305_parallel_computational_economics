@@ -1,346 +1,352 @@
-# cse305_parallel_computational_economics
+# CSE305 Parallel Computational Economics
 
-Within this repository, you will find our project on parallel computational economics as part of the Concurrent and Distributed Computing (CSE305) course. We implement and then parallelize an agent-based financial market model inspired by Lux and Marchesi *Scaling and criticality in a stochastic multi-agent model of a financial market* 1999 paper and then their "Volatility clustering in financial markets: a microsimulation of interacting agents". 
+Within this repository, you will find our project on parallel computational economics as part of the Concurrent and Distributed Computing (CSE305) course. The project is inspired by the agent-based financial market models of Lux and Marchesi defined in their paper *Scaling and criticality in a stochastic multi-agent model of a financial market* (1999) and *Volatility clustering in financial markets: a microsimulation of interacting agents* (2000).
 
-## Model overview
+These papers are used only as initial source for the model. We copied from their models agent state transitions, .???, and we added limit-order generation and order-book market clearing. This model will be used a benchmark for parallelization. The objective of the project is to study how different parallelization strategies perform on this model.
 
-The model consists in a financial market simulation with heterogeneous agents each behaving with different rules:
-
-- **fundamentalists** trade according to the deviation between the market price and a fundamental value;
-- **noise traders**, or chartists, react to price trends and market sentiment. They are divided into optimistic and pessimistic traders.
-
-The model then combines three mechanisms:
-
-1. stochastic changes in the fundamental value of the asset;
-2. endogenous switching of agents between trading states;
-3. endogenous price changes caused by aggregate excess demand.
-
+The computational feature of the model is that most agent-level operations are independent, while market clearing is order-dependent. This creates a natural mixed parallel/sequential workload. For instance agent initialization, counting, type updating, and order generation can be parallelized, whereas order-book clearing, being a first come first served model, remains a sequential bottleneck.
 
 ## Repository structure
 
 ```text
 .
+├── CUDA/
+│   └── GPU_V3/
+│       ├── main.cpp
+│       ├── market.cpp
+│       ├── market.hpp
+│       ├── model.cu
+│       └── output.cpp
+│
+├── src/
+│   ├── Sequential_linked_list/
+│   ├── Sequential_array/
+│   ├── CPU_parallel_V3/
+│   ├── CPU_parallel_V4/
+│   ├── analysis.py
+│   └── simulation
+│
 ├── README.md
-├── src/              # C++ source files
-├── include/          # Header files
-├── scripts/          # Benchmark and plotting scripts
-└── results/         
+└── .gitignore
 ```
 
+The `src/` directory contains the CPU implementations.
+The `CUDA/` directory contains the CUDA implementation. Currently, `CUDA/GPU_V3` is the GPU version corresponding to `src/CPU_parallel_V3`.
 
-## Detailed model implementation
+## Implemented versions
 
+| Version                       | Description                                                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/Sequential_linked_list/` | Sequential baseline with linked-list-style order-book storage.                                                                                          |
+| `src/Sequential_array/`       | Sequential baseline using array/vector order-book storage.                                                                                              |
+| `src/CPU_parallel_V3/`        | CPU-parallel version. Agent-wise operations are parallelized with C++ threads; market clearing remains sequential.                                      |
+| `src/CPU_parallel_V4/`        | CPU-parallel version with batched market-clearing improvements. Orders are grouped before clearing to reduce part of the sequential insertion overhead. |
+| `CUDA/GPU_V3/`                | CUDA hybrid version. Agent-wise operations run on GPU; market clearing remains sequential on CPU.                                                       |
 
-The implementation is based on the Lux--Marchesi microsimulation model of interacting chartists and fundamentalists. We use the detailed transition rules described in the 2000 paper, and we optionally add Gaussian shocks to the fundamental value as in the 1999 Nature version of the model.
+## Model implemented
 
-The market contains three agent states:
+The market contains three types of agents:
 
-- `Optimist`: chartist expecting a rising market;
-- `Pessimist`: chartist expecting a declining market;
-- `Fundamentalist`: trader expecting the market price to revert toward the fundamental value.
+* `Optimist`: chartist submitting buy orders;
+* `Pessimist`: chartist submitting sell orders;
+* `Fundamentalist`: trader reacting to mispricing between market price and fundamental value.
 
-We denote the chartist population as
+At each time step, the simulation executes the following sequence.
 
-```math
-n_c(t)=n_+(t)+n_-(t)
-```
+### 1. Fundamental value update
 
-where `n_+` is the number of optimistic chartists and `n_-` is the number of pessimistic chartists. The total population is
+The fundamental value follows a multiplicative Gaussian shock:
 
-```math
-N=n_c(t)+n_f(t)
-```
-
-where `n_f` is the number of fundamentalists.
-
-
-Following the paper, we will simulate the model with small discrete time increments:
-
-```math
-\Delta t = 0.01.
-```
-
-### Main state variables
-
-| Variable                    | Meaning                                                 |
-| --------------------------- | ------------------------------------------------------- |
-| `p`                         | current market price                                    |
-| `pf`                        | current fundamental value                               |
-| `dt` / `Delta t` | micro time step used to discretize transition rates |
-| `epsilon`                   | exogenous shock to the fundamental value                |
-| `n_optimists` / `n_+`       | number of optimistic chartists                          |
-| `n_pessimists` / `n_-`      | number of pessimistic chartists                         |
-| `n_chartists` / `n_c`       | total number of chartists                               |
-| `n_fundamentalists` / `n_f` | number of fundamentalists                               |
-| `x`                         | opinion index among chartists                           |
-| `z`                         | fraction of chartists in the population                 |
-| `ED`                        | aggregate excess demand                                 |
-| `mu`                        | noise in the market maker's perception of excess demand |
-
-### Step 1. The Fundamental value
-
-First, we allow for a stochastic fundamental value price update:
-
-```math
-p_{f,t}=p_{f,t-1}\exp(\epsilon_t),
-```
-
-with
-
-```math
-\epsilon_t \sim \mathcal{N}(0,\sigma_{\epsilon}^{2}).
-```
-
-So the exogenous input to the market is Gaussian.
-
-### Step 2. The Opinion index and price trend
-
-Then, we define the opinion index among chartists as
-
-```math
-x(t)
-=
-\frac{n_+(t)-n_-(t)}{n_c(t)},
+$$
+p_f(t+1)=p_f(t)\exp(\epsilon_t),
 \qquad
-x(t)\in[-1,1].
-```
+\epsilon_t \sim \mathcal{N}(0,\sigma_{pf}^{2}).
+$$
 
-And the fraction of chartists in the population being
+### 2. Agent counting and sentiment
 
-```math
-z(t)=\frac{n_c(t)}{N}.
-```
+The simulation counts
 
-The price trend $\dot p(t)$ corresponds to $dp/dt$ in the continuous-time notation. It is estimated from the recent price path. Following Lux and Marchesi, we use the average price change over `[t - 0.2, t)`, which corresponds to 20 micro-steps since $dt = 0.01$:
+$$
+n_+(t), \qquad n_-(t), \qquad n_f(t),
+$$
 
-```math
-\dot p(t)
-\approx
-\frac{p(t)-p(t-0.2)}{0.2}
-```
+where (n_+(t)) is the number of optimists, (n_-(t)) the number of pessimists, and (n_f(t)) the number of fundamentalists.
 
+Chartist sentiment is
 
-### Step 3. Opinion switch between optimistic and pessimistic chartists
+$$
+x(t)=
+\frac{n_+(t)-n_-(t)}
+{n_+(t)+n_-(t)}.
+$$
 
-Opinion switching is driven by two forces:
+If there are no chartists, the implementation sets (x(t)=0).
 
-* herding, measured by the opinion index `x`;
-* trend-following, measured by the recent price trend.
+### 3. Transition probability computation
 
-Here `nu_1` is the (fixed) revision frequency for opinion changes. A larger `nu_1` means chartists reconsider their opinion more often, while the exponential term adjusts this baseline frequency according to herding and trend-following forces.
+The log return is
 
+$$
+r(t)=\log\left(\frac{p(t)}{p(t-1)}\right).
+$$
 
-The transition intensities are
+The log mispricing is
 
-```math
-\lambda_{-\to +}(t)
-=
-\nu_1
-\frac{n_c(t)}{N}
-\exp(U_1(t)),
-```
+$$
+m_{\log}(t)=\log\left(\frac{p_f(t)}{p(t)}\right).
+$$
 
-and
+Opinion switching between optimists and pessimists uses
 
-```math
-\lambda_{+\to -}(t)
-=
-\nu_1
-\frac{n_c(t)}{N}
-\exp(-U_1(t)).
-```
-With the forcing term being
-
-```math
-U_1(t)
-=
-\alpha_1 x(t)
-+
-\alpha_2
-\frac{\dot p(t)}{\nu_1}.
-```
-
-At each micro-step, the corresponding transition probabilities are then approximately
-
-```math
-P(-\to +)
-\approx
-\lambda_{-\to +}(t)\Delta t,
+$$
+U_{-\to +}(t)=a_{\text{herding}}x(t)+a_{\text{trend}}r(t),
 \qquad
-P(+\to -)
-\approx
-\lambda_{+\to -}(t)\Delta t.
+U_{+\to -}(t)=-U_{-\to +}(t).
+$$
+
+The implemented switching probability has the form
+
+$$
+P(i\to j)=\nu \exp(U_{i\to j})\Delta t.
+$$
+
+For strategy switching, the implemented payoff proxies are
+
+$$
+\pi_+(t)=r(t),
+\qquad
+\pi_-(t)=-r(t),
+\qquad
+\pi_f(t)=|m_{\log}(t)|.
+$$
+
+The resulting probabilities are computed in `compute_probabilities`.
+
+### 4. Agent type update
+
+Once transition probabilities are fixed, each agent draws one uniform random number and updates its type independently. This step is naturally parallel.
+
+### 5. Candidate order generation
+
+Each agent generates at most one limit order.
+
+An optimist submits a buy order:
+
+$$
+p_i^{limit}=p(t)(1+a_i),
+\qquad
+q_i=\min\left(q_i^c,\frac{cash_i}{p_i^{limit}}\right).
+$$
+
+A pessimist submits a sell order:
+
+$$
+p_i^{limit}=p(t)(1-a_i),
+\qquad
+q_i=\min(q_i^c,inventory_i).
+$$
+
+A fundamentalist uses the relative mispricing
+
+$$
+m(t)=\frac{p_f(t)-p(t)}{p(t)}.
+$$
+
+If (m(t)\geq m_{\min}), the fundamentalist submits a buy order.
+If (m(t)\leq -m_{\min}), the fundamentalist submits a sell order.
+Otherwise, no order is submitted.
+
+For active fundamentalist orders, the desired order size is
+
+$$
+q_i^f=q_i^c(1+\gamma_f|m(t)|).
+$$
+
+No borrowing and no short-selling are enforced by taking the minimum with available cash or inventory.
+
+### 6. Market clearing
+
+The order book stores bids and asks sorted by limit price. A buy order matches against the best ask if
+
+$$
+p_{\text{ask}}\leq p_{\text{buy}}^{limit}.
+$$
+
+A sell order matches against the best bid if
+
+$$
+p_{\text{bid}}\geq p_{\text{sell}}^{limit}.
+$$
+
+Whenever a trade occurs, the implementation updates both agents' cash and inventory. The traded price is the price of the resting order.
+
+### 7. Price update
+
+The new market price is the volume-weighted average traded price:
+
+$$
+p(t+1)=
+\frac{\sum_k q_k p_k}{\sum_k q_k}.
+$$
+
+If no trade occurs, the implementation uses the fallback price defined in the code.
+
+## Parallelization structure
+
+| Step                               | `CPU_parallel_V3` | `CUDA/GPU_V3`                         |
+| ---------------------------------- | ----------------- | ------------------------------------- |
+| Agent initialization               | CPU threads       | GPU                                   |
+| Fundamental value update           | CPU               | CPU                                   |
+| Agent counting                     | CPU threads       | GPU reduction + CPU final aggregation |
+| Transition probability computation | CPU               | CPU                                   |
+| Agent type update                  | CPU threads       | GPU                                   |
+| Candidate order generation         | CPU threads       | GPU                                   |
+| Market clearing                    | CPU sequential    | CPU sequential                        |
+| Price update                       | CPU               | CPU                                   |
+| Output writing                     | CPU               | CPU                                   |
+
+Market clearing is kept sequential as order book is stateful and order-dependent. Inserting one order modify the book, change agent inventories and cash, and affect subsequent matches.
+
+## CPU configuration
+
+In `CPU_parallel_V3`, the number of CPU threads is controlled by `Params::nb_threads` in `market.hpp`.
+
+We use a static block decomposition:
+
+```cpp
+chunk_size = N / nb_threads;
 ```
 
-Thus, if the price trend is positive and optimistic chartists are already the majority, pessimists are more likely to become optimists. Conversely, if the trend is negative and pessimists dominate, optimists are more likely to become pessimists.
+Each thread processes a contiguous interval of agents. The last thread receives the remaining agents when (N) is not exactly divisible by the number of threads.
 
-### Step 4. Switch between chartists and fundamentalists
+In `CPU_parallel_V3`, threads are used for:
 
-At each micro-step, agents may also switch between chartist and fundamentalist strategies. These switches are driven by relative profitability.
+* agent initialization;
+* agent counting;
+* agent type update;
+* candidate order generation.
 
-We use the following variables:
+After candidate orders are generated, the main thread joins the worker threads and inserts orders into the order book sequentially.
 
-* `r`: nominal dividend of the asset, fixed in the 2000 baseline;
-* `R`: average return from alternative investments, fixed;
-* `s`: discount factor applied to fundamentalist arbitrage profits, fixed with `s < 1`;
-* `nu_2`: revision frequency for switching between chartist and fundamentalist strategies, fixed;
-* `alpha_3`: sensitivity to profit differences, fixed.
+To benchmark different CPU thread counts, edit `nb_threads` in `market.hpp`.
 
-First, we update the dividend `r` with the current fundamental value by setting `r_t = R * pf_t`. Then, for optimistic chartists versus fundamentalists, the forcing term is
+## CUDA configuration
 
-```math
-U_{f,+}(t)
-=
-\alpha_3
-\left(
-\frac{r_t+\dot p(t)/\nu_2}{p(t)}
--
-R
--
-s
-\left|
-\frac{p_f(t)-p(t)}{p(t)}
-\right|
-\right)
-```
-The transition intensities are
+In `CUDA/GPU_V3`, each CUDA kernel maps one GPU thread to one agent.
 
-```math
-\lambda_{f\to +}(t)
-=
-\nu_2
-\frac{n_+(t)}{N}
-\exp(U_{f,+}(t))
+The default configuration is
+
+```cpp
+threads = 256;
+blocks = (N + threads - 1) / threads;
 ```
 
-and
+So for (N) agents, the grid contains enough blocks to cover all agents, and excess threads return immediately. The choice of 256 threads per block corresponds to 8 warps per block and is also convenient for the block-level reduction used in agent counting.
 
-```math
-\lambda_{+\to f}(t)
-=
-\nu_2
-\frac{n_f(t)}{N}
-\exp(-U_{f,+}(t))
+In this CUDA version, we use managed memory for the main `Agent*` and `Order*` arrays to allow both GPU kernels and CPU market clearing to access the same data.
+
+
+## Build instructions
+
+### CPU versions
+
+Example for `CPU_parallel_V3`:
+
+```bash
+cd src/CPU_parallel_V3
+g++ -O3 -std=c++17 main.cpp model.cpp market.cpp output.cpp -o simulation
 ```
 
-For pessimistic chartists versus fundamentalists, the forcing term is
+Run:
 
-```math
-U_{f,-}(t)
-=
-\alpha_3
-\left(
-R
--
-\frac{r_t+\dot p(t)/\nu_2}{p(t)}
--
-s
-\left|
-\frac{p_f(t)-p(t)}{p(t)}
-\right|
-\right)
+```bash
+./simulation --agents 10000 --steps 100 --time
 ```
 
-The transition intensities are
+Example for `CPU_parallel_V4`:
 
-```math
-\lambda_{f\to -}(t)
-=
-\nu_2
-\frac{n_-(t)}{N}
-\exp(U_{f,-}(t))
+```bash
+cd src/CPU_parallel_V4
+g++ -O3 -std=c++17 main.cpp model.cpp market.cpp output.cpp -o simulation
+./simulation --agents 10000 --steps 100 --time
 ```
 
-and
+### CUDA version
 
-```math
-\lambda_{-\to f}(t)
-=
-\nu_2
-\frac{n_f(t)}{N}
-\exp(-U_{f,-}(t))
+On the school machines, compile with:
+
+```bash
+cd CUDA/GPU_V3
+
+/usr/local/cuda/bin/nvcc -arch=sm_60 -std=c++17 \
+  -I/usr/local/cuda/include \
+  main.cpp model.cu market.cpp output.cpp \
+  -o simulation
 ```
 
-Over one micro-step, each transition probability is approximated by
+Run:
 
-```math
-P(i\to j)
-\approx
-\lambda_{i\to j}(t)\Delta t
-``` 
-Using these transition probabilities, each agent is updated stochastically. This is useful for parallelization since once the transition probabilities are fixed, agents can be processed independently.
-
-### Step 5. Update Excess demand
-
-At each micro-step, we aggregate excess demand as
-
-```math
-ED(t)=ED_c(t)+ED_f(t).
+```bash
+./simulation --agents 10000 --steps 100 --time
 ```
 
-Chartists buy or sell a fixed number of units `t_c`. Optimists buy and pessimists sell, so chartist excess demand is
+Large benchmark example:
 
-```math
-ED_c(t)
-=
-(n_+(t)-n_-(t))t_c.
+```bash
+./simulation --agents 500000 --steps 10 --time
 ```
 
-Fundamentalists trade against mispricing. Their excess demand is
+## Runtime options
 
-```math
-ED_f(t)
-=
-n_f(t)\gamma(p_f(t)-p(t)),
+| Option          | Meaning                                            |
+| --------------- | -------------------------------------------------- |
+| `--agents N`    | Number of agents                                   |
+| `--steps T`     | Number of simulation time steps                    |
+| `--seed S`      | Random seed                                        |
+| `--output FILE` | Output CSV path                                    |
+| `--sigma-pf X`  | Volatility of the fundamental value                |
+| `--time`        | Print timing information                           |
+| `--runs K`      | Repeat the simulation `K` times and print averages |
+
+Example:
+
+```bash
+./simulation --agents 50000 --steps 100 --time --runs 5
 ```
 
-where `gamma` is the strength of the fundamentalists' reaction to the deviation between fundamental value and market price.
+## Benchmarking
 
-Hence,
+For fair comparison, CPU and GPU versions should be run on the same machine.
 
-```math
-ED(t)
-=
-(n_+(t)-n_-(t))t_c
-+
-n_f(t)\gamma(p_f(t)-p(t)).
+Example:
+
+```bash
+cd src/CPU_parallel_V3
+./simulation --agents 500000 --steps 10 --time
+
+cd ../../CUDA/GPU_V3
+./simulation --agents 500000 --steps 10 --time
 ```
 
-If `p < pf`, fundamentalists buy. If `p > pf`, fundamentalists sell.
+Preliminary benchmark on the school SSH machine:
 
-### Step 6. Market price update
+|      N |  T | Version           | Total ms | Counting ms | Updating ms | Adding / clearing ms |
+| -----: | -: | ----------------- | -------: | ----------: | ----------: | -------------------: |
+| 500000 | 10 | `CPU_parallel_V3` |  32601.6 |       167.8 |       156.0 |              32178.0 |
+| 500000 | 10 | `CUDA/GPU_V3`     |  28571.2 |        42.6 |         1.3 |              28266.8 |
 
-Since we combine the detailed transition mechanism of Lux--Marchesi (2000) with the Gaussian update of the fundamental value from Lux--Marchesi (1999), we use a log-price impact rule instead of the fixed-tick price rule of the 2000 microsimulation.
+The CUDA version strongly accelerates the agent-wise operations. The overall speedup is smaller because market clearing remains sequential and dominates runtime for large (N).
 
-```math
-p_{t+\Delta t}
-=
-p_t
-\exp\left(
-\beta \frac{ED_t}{N}\Delta t
-\right)
-```
+## Terminal timing output
 
-Equivalently, excess demand changes the log-price by `beta * ED_t / N`, so positive excess demand increases the price and negative excess demand decreases it.
+With `--time`, the program prints a runtime summary:
 
-### Step 7. Recorded outputs
+```text
+Simulation completed.
+Run 1: 2097.15 ms  (counting=56.2052 ms  updating=42.5583 ms  adding=1980.3 ms)
 
-At each simulation step, the model records the aggregate market state. The main recorded return is
-
-```math
-ret_t
-=
-\log(p_t)-\log(p_{t-1})
-```
-
-The output file stores:
-
-* market price;
-* fundamental value;
-* log return;
-* fundamental-value shock;
-* opinion index;
-* number of optimistic chartists;
-* number of pessimistic chartists;
-* number of fundamentalists;
-* excess demand.
+And we define:
+counting: time spent counting optimists, pessimists, and fundamentalists.
+updating: time spent updating agents' types.
+adding: time spent generating orders, clearing the market, and updating the price.
