@@ -1,10 +1,10 @@
 # Project README - (CSE305) Concurrent and Distributed Computing
 
-Within this repository, you will find our project on parallel computational economics as part of the Concurrent and Distributed Computing (CSE305) course. The project is inspired by the agent-based financial market models of Lux and Marchesi defined in their paper *Scaling and criticality in a stochastic multi-agent model of a financial market* (1999) and *Volatility clustering in financial markets: a microsimulation of interacting agents* (2000).
+Within this repository, you will find our project on parallel computational economics as part of the Concurrent and Distributed Computing (CSE305) course. The project is inspired by the agent-based financial market models of Lux and Marchesi, especially *Scaling and criticality in a stochastic multi-agent model of a financial market* (1999) and *Volatility clustering in financial markets: a microsimulation of interacting agents* (2000).
 
-These papers are used only as initial source for the model. We copied from their models agent state transitions, .???, and we added limit-order generation and order-book market clearing. This model will be used a benchmark for parallelization. The objective of the project is to study how different parallelization strategies perform on this model.
+We use these papers as the starting point for the economic structure of the model: heterogeneous agents, optimists, pessimists, fundamentalists, and stochastic transitions driven by sentiment, trends, and mispricing. We then fix one computational model by adding limit-order generation and order-book market clearing. Our goal is then to study different parallelization strategies on this same model.
 
-The computational feature of the model is that most agent-level operations are independent, while market clearing is order-dependent. This creates a natural mixed parallel/sequential workload. For instance agent initialization, counting, type updating, and order generation can be parallelized, whereas order-book clearing, being a first come first served model, remains a sequential bottleneck.
+The computational complexity is that most agent-level operations are independent, while the market clearing is order-dependent. Agent initialization, counting, type updating, and order generation can be parallelized; order-book clearing is complex to parallelize since it relies on price-priority matching and sequential order arrival. We will propose ways to optimize this process.
 
 ## Repository structure
 
@@ -38,12 +38,12 @@ The `CUDA/` directory contains the CUDA implementation. Currently, `CUDA/GPU_V3`
 | Version                       | Description                                                                                                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/Sequential_linked_list/` | Sequential baseline with linked-list-style order-book storage.                                                                                          |
-| `src/Sequential_array/`       | Sequential baseline using array/vector order-book storage.                                                                                              |
+| `src/Sequential_array/`       | Sequential baseline using array order-book storage.                                                                                              |
 | `src/CPU_parallel_V3/`        | CPU-parallel version. Agent-wise operations are parallelized with C++ threads; market clearing remains sequential.                                      |
 | `src/CPU_parallel_V4/`        | CPU-parallel version with batched market-clearing improvements. Orders are grouped before clearing to reduce part of the sequential insertion overhead. |
 | `CUDA/GPU_V3/`                | CUDA hybrid version. Agent-wise operations run on GPU; market clearing remains sequential on CPU.                                                       |
 
-## Model implemented
+## Model
 
 The market contains three types of agents:
 
@@ -51,7 +51,7 @@ The market contains three types of agents:
 * `Pessimist`: chartist submitting sell orders;
 * `Fundamentalist`: trader reacting to mispricing between market price and fundamental value.
 
-At each time step, the simulation executes the following sequence.
+At each time step, the simulation executes the following sequence:
 
 ### 1. Fundamental value update
 
@@ -206,7 +206,7 @@ If no trade occurs, the implementation uses the fallback price defined in the co
 | Price update                       | CPU               | CPU                                   |
 | Output writing                     | CPU               | CPU                                   |
 
-Market clearing is kept sequential as order book is stateful and order-dependent. Inserting one order modify the book, change agent inventories and cash, and affect subsequent matches.
+Market clearing is kept sequential since order book is stateful and order-dependent. Inserting one order modify the book, change agent inventories and cash, and affect subsequent matches.
 
 ## CPU configuration
 
@@ -317,7 +317,7 @@ Example:
 
 ## Benchmarking
 
-For fair comparison, CPU and GPU versions should be run on the same machine.
+We run CPU and GPU versions on the same machine for fair comparaison.
 
 Example:
 
@@ -329,7 +329,7 @@ cd ../../CUDA/GPU_V3
 ./simulation --agents 500000 --steps 10 --time
 ```
 
-Preliminary benchmark on the school SSH machine:
+Exemples of benchmark:
 
 |      N |  T | Version           | Total ms | Counting ms | Updating ms | Adding / clearing ms |
 | -----: | -: | ----------------- | -------: | ----------: | ----------: | -------------------: |
