@@ -81,7 +81,8 @@ Probs compute_probabilities( Params& params,  Market& market,  Counts& counts) {
 }
 
 // #5 Update agents
-void update_agents(std::vector<Agent*>& agents, Probs& probs, std::mt19937& rng) {
+Counts update_agents(Params& params, std::vector<Agent*>& agents, Probs& probs, std::mt19937& rng) {
+    Counts counts_after;
     
     for (Agent* agent : agents) {
         
@@ -114,19 +115,28 @@ void update_agents(std::vector<Agent*>& agents, Probs& probs, std::mt19937& rng)
                 agent->type = Agent::Agent_type::Pessimist;
             }
         }
+        // Count final type immediately after update
+        if (agent->type == Agent::Agent_type::Optimist) {
+            counts_after.nb_optimists++;
+        }
+        else if (agent->type == Agent::Agent_type::Pessimist) {
+            counts_after.nb_pessimists++;
+        }
+        else {
+            counts_after.nb_fundamentalists++;
+        }
     }
+    return counts_after;
 }
+
 
 //6 New order generation: 
-
-
 void add_all_new_orders(Market& market, Params& params, std::vector<Agent*>& agents, Order_book& order_book){
-    for (int i=0; i<params.N;i++){
-            Order* new_order = agents[i]->new_order(std::ref(market), std::ref(params));
-            order_book.add_order( std::ref(agents), new_order);
-        }
+    for (int i = 0; i < params.N; i++) {
+        Order new_order = agents[i]->new_order(market, params);
+        order_book.add_order(agents, new_order);
+    }
 }
-
 
 
 
@@ -164,9 +174,7 @@ SimTimes run_simulation( Params& params) {
 
         catch(int errorCode){
             std::cout<<"Error:"<<errorCode;
-
-        }
-        
+        } 
     }
 
     write_header(out);
@@ -189,22 +197,16 @@ SimTimes run_simulation( Params& params) {
         Probs probs = compute_probabilities(params, market, counts_before);
 
         auto t1 = std::chrono::high_resolution_clock::now();
-        update_agents(agents, probs, rng);
+        Counts counts_after = update_agents(params, agents, probs, rng);
         time_updating += std::chrono::duration<double, std::milli>(
             std::chrono::high_resolution_clock::now() - t1).count();
 
-        auto t2 = std::chrono::high_resolution_clock::now();
-        Counts counts_after = count_agents(agents);
-        time_counting += std::chrono::duration<double, std::milli>(
-            std::chrono::high_resolution_clock::now() - t2).count();
-
-
-        auto t3 = std::chrono::high_resolution_clock::now();
-        add_all_new_orders(std::ref(market),std::ref (params),std::ref (agents),std::ref(order_book));
+        auto t3 = std::chrono::high_resolution_clock::now();    
+        add_all_new_orders(market, params, agents, order_book);
         time_adding += std::chrono::duration<double, std::milli>(
             std::chrono::high_resolution_clock::now() - t3).count();
 
-        double new_price = update_price(std::ref(order_book));
+        double new_price = update_price(order_book);
 
         if (!std::isfinite(new_price) || new_price <= 0.0) {
             std::cerr << "Numerical error at time step " << t << "\n";

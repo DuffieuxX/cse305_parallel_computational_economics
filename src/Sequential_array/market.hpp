@@ -49,7 +49,7 @@ struct Agent{
     
     Agent(Agent_type type,int agent_id,Params& params,std::mt19937& rng);
     
-    Order* new_order(Market& market, Params& params);
+    Order new_order(Market& market, Params& params);
 };
 
 
@@ -87,16 +87,19 @@ struct Order{
 
 
 struct Order_book {
+    std::vector<Order> order_storage;
     std::vector<Order*> bids;
     std::vector<Order*> asks;
+
+    std::size_t bid_head = 0;
+    std::size_t ask_head = 0;
 
     double volume_weighted_sum=0;
     double volume=0;
 
     Order_book( Params& params);
-    ~Order_book();
 
-    void add_order(std::vector<Agent*>& agents, Order* order);
+    void add_order(std::vector<Agent*>& agents, const Order& order);
 };
 
 struct SimTimes {
@@ -132,23 +135,8 @@ double uniform01(std::mt19937& rng);
 
 // Model function declarations
 std::vector<Agent*> initialize_agents( Params& params, std::mt19937& rng);
-
 Counts count_agents( std::vector<Agent*>& agents);
-
 double sentiment( Counts& counts);
-
-Probs compute_probabilities(
-     Params& params,
-     Market& market,
-     Counts& counts
-);
-
-void update_agents(
-    std::vector<Agent*>& agents,
-     Probs& probs,
-    std::mt19937& rng
-);
-
+Probs compute_probabilities(Params& params, Market& market, Counts& counts);
+Counts update_agents(Params& params, std::vector<Agent*>& agents, Probs& probs, std::mt19937& rng);
 double update_price(Order_book& order_book);
-
-

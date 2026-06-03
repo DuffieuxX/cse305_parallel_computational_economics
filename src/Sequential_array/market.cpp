@@ -19,35 +19,26 @@ aggressiveness(half_normal(rng,0,params.sigma_aggressiveness))
 {}
 
 
-Order_book::Order_book( Params& params) {
+Order_book::Order_book(Params& params) {
+    this->order_storage.reserve(params.N);
     this->bids.reserve(params.N);
     this->asks.reserve(params.N);
 }
 
-Order_book::~Order_book(){
-    for(Order* o : bids) delete o;
-    for(Order* o : asks) delete o;
-}
 
-Order* Agent::new_order(Market& market, Params& params){
+Order Agent::new_order(Market& market, Params& params){
 
     if(this->type==Agent::Agent_type::Optimist){
         double limit_price =market.p*(1+this->aggressiveness);
         double quantity =std::min(this->chartist_order_size, this->cash/limit_price);
         bool buy=true;
-
-        Order* new_order = new Order(buy, quantity, limit_price,this->agent_id);
-        return new_order;
-
+        return Order(buy, quantity, limit_price, this->agent_id);
     }
-
     else if(this->type==Agent::Agent_type::Pessimist){
         double limit_price =market.p*(1-this->aggressiveness);
         double quantity =std::min(this->chartist_order_size, this->asset_inventory);
         bool buy=false;
-        Order* new_order = new Order(buy, quantity, limit_price,this->agent_id);
-        return new_order;
-
+        return Order(buy, quantity, limit_price, this->agent_id);
     }
     else{
         double m_t= (market.pf-market.p)/market.p;
@@ -58,8 +49,7 @@ Order* Agent::new_order(Market& market, Params& params){
             double fundamentalist_order_size = this->chartist_order_size * (1.0 + params.gamma_f * std::abs(m_t));
             double quantity = std::min(fundamentalist_order_size, this->cash/limit_price);
 
-            Order* new_order= new Order(buy,quantity,limit_price,this->agent_id);
-            return new_order;
+            return Order(buy,quantity,limit_price,this->agent_id);
         }
 
 
@@ -69,103 +59,100 @@ Order* Agent::new_order(Market& market, Params& params){
             double fundamentalist_order_size = this->chartist_order_size * (1.0 + params.gamma_f * std::abs(m_t));
             double quantity = std::min(fundamentalist_order_size, this->asset_inventory);
 
-            Order* new_order= new Order(buy,quantity,limit_price,this->agent_id);
-            return new_order;
+            return Order(buy,quantity,limit_price,this->agent_id);
         }
-
         else{
-            Order* new_order= new Order(true,0,0,this->agent_id);
-            return new_order;
+            return Order(true,0,0,this->agent_id);
         }
     }
-
 }
 
 
 
 
-void Order_book::add_order(std::vector<Agent*>& agents,Order* new_order){
-    bool buy =new_order->buy;
+void Order_book::add_order(std::vector<Agent*>& agents, const Order& new_order_) {
+    Order new_order = new_order_;
 
-    if(new_order->quantity==0){
+    if(new_order.quantity==0){
         return;
     }
-    
+    bool buy = new_order_.buy;
     if(buy){
+        while(new_order.quantity > 0.0 && this->ask_head < this->asks.size()){
+            Order* best_ask = this->asks[this->ask_head];
 
-        while(new_order->quantity>0 && !asks.empty()){
-            Order* best_ask = this->asks[0];
-
-            if(best_ask->price<=new_order->price){
+            if(best_ask->price<=new_order.price){
                 double price_trade = best_ask->price;
-                double quantity_trade = std::min(best_ask->quantity, new_order->quantity);
+                double quantity_trade = std::min(best_ask->quantity, new_order.quantity);
 
-                new_order->quantity -= quantity_trade;
+                new_order.quantity -= quantity_trade;
                 best_ask-> quantity -= quantity_trade; 
 
                 agents[best_ask->agent_id]->asset_inventory-=quantity_trade;
                 agents[best_ask->agent_id]->cash+=quantity_trade*price_trade;
 
-                agents[new_order->agent_id]->asset_inventory+=quantity_trade;
-                agents[new_order->agent_id]->cash-=quantity_trade*price_trade;
+                agents[new_order.agent_id]->asset_inventory+=quantity_trade;
+                agents[new_order.agent_id]->cash-=quantity_trade*price_trade;
 
                 this->volume+=quantity_trade;
                 this->volume_weighted_sum+=quantity_trade * price_trade;
 
                 if(best_ask->quantity==0){
-                    asks.erase(asks.begin());
+                    ++this->ask_head;
                     }    
             }else{
                 break;
             }
             
         }
-        if(new_order->quantity>0){
-                auto pos = std::lower_bound(this->bids.begin(), this->bids.end(), new_order,
-                [](const Order* a, const Order* b){ return a->price > b->price; });
-                bids.insert(pos, new_order);
-            } 
-
+        if(new_order.quantity>0){
+            this->order_storage.push_back(new_order);
+            Order* stored_order = &this->order_storage.back();
+            auto first_active = this->bids.begin() + static_cast<std::ptrdiff_t>(this->bid_head);
+            auto pos = std::upper_bound(first_active, this->bids.end(), stored_order,
+                [](const Order* value, const Order* element) {return value->price > element->price;}
+            );
+            this->bids.insert(pos, stored_order);
+        } 
     }
+    else if(!buy){
+        while (new_order.quantity > 0.0 && this->bid_head < this->bids.size()) {
+            Order* best_bid = this->bids[this->bid_head];
 
-    if(!buy){
-
-        while(new_order->quantity>0 && !bids.empty()){
-
-            Order* best_bid = this->bids[0];
-
-
-            if(best_bid->price>=new_order->price){
+            if (best_bid->price >= new_order.price) {
                 double price_trade = best_bid->price;
-                double quantity_trade = std::min(best_bid->quantity, new_order->quantity);
+                double quantity_trade = std::min(best_bid->quantity, new_order.quantity);
 
-                new_order->quantity -= quantity_trade;
-                best_bid-> quantity -= quantity_trade; 
+                new_order.quantity -= quantity_trade;
+                best_bid->quantity -= quantity_trade;
 
-                agents[best_bid->agent_id]->asset_inventory+=quantity_trade;
-                agents[best_bid->agent_id]->cash-=quantity_trade*price_trade;
+                agents[best_bid->agent_id]->asset_inventory += quantity_trade;
+                agents[best_bid->agent_id]->cash -= quantity_trade * price_trade;
 
-                agents[new_order->agent_id]->asset_inventory-=quantity_trade;
-                agents[new_order->agent_id]->cash+=quantity_trade*price_trade;
+                agents[new_order.agent_id]->asset_inventory -= quantity_trade;
+                agents[new_order.agent_id]->cash += quantity_trade * price_trade;
 
-                this->volume+=quantity_trade;
-                this->volume_weighted_sum+=quantity_trade * price_trade;
+                this->volume += quantity_trade;
+                this->volume_weighted_sum += quantity_trade * price_trade;
 
-                if(best_bid->quantity==0){
-                    bids.erase(bids.begin());
-                    }    
-            }
-            else{
+                if (best_bid->quantity <= 0.0) {
+                    ++this->bid_head;
+                }
+            } else {
                 break;
             }
         }
-        if(new_order->quantity>0){
-                auto pos = std::lower_bound(this->asks.begin(), this->asks.end(), new_order,
-                [](const Order* a, const Order* b){ return a->price < b->price; });
-                asks.insert(pos, new_order);
-            }
+
+        if (new_order.quantity > 0.0) {
+            this->order_storage.push_back(new_order);
+            Order* stored_order = &this->order_storage.back();
+            auto first_active = this->asks.begin() + static_cast<std::ptrdiff_t>(this->ask_head);
+            auto pos = std::upper_bound(first_active, this->asks.end(), stored_order,
+                [](const Order* value, const Order* element) { return value->price < element->price;}
+            );
+            this->asks.insert(pos, stored_order);
+        }
     }
-    
 }
 
 
