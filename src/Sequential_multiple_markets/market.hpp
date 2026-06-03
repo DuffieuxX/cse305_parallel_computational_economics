@@ -6,19 +6,14 @@
 #include <vector>
 #include <algorithm>
 #include <filesystem>
-#include<thread>
 #include <limits>
 
 // #1 Data structure 
 struct Params {
+    int nb_markets=5;
 
     int N = 100000; //number of agents 
     int T = 1000; // number of time periods
-
-    int nb_threads=10;
-
-    int chunk_size = N/nb_threads;
-    
     int seed = 42;
     double dt = 1.0; //  period increments for strategy re-evaluation 
     double p0 = 100.0; // initial price 
@@ -49,13 +44,13 @@ struct Agent{
     Agent_type type; //wether agent is optimist, pessimist or fundamentalist
     int agent_id;
     double cash; //quantity of cash of the agent >=0 (no borrowing)
-    double asset_inventory; // quantity of asset held by client >=0 (no shorting)
+    std::vector<double> inventory; // quantity of asset held by client >=0 (no shorting)
     double chartist_order_size; // order size when the agent is a chartist 
     double aggressiveness; // aggressiveness of agent when deciding order price 
     
     Agent(Agent_type type,int agent_id,Params& params,std::mt19937& rng);
     
-    Order new_order(const Market& market, const Params& params) const;
+    Order new_order(Market& market, Params& params);
 };
 
 
@@ -91,21 +86,21 @@ struct Order{
     Order(bool buy, double quantity, double price, int agent_id);
 };
 
-struct Order_book {
-    std::vector<Order> order_storage; //will store the real orders
 
+struct Order_book {
+    std::vector<Order> order_storage;
     std::vector<Order*> bids;
     std::vector<Order*> asks;
 
     std::size_t bid_head = 0;
     std::size_t ask_head = 0;
 
-    double volume_weighted_sum = 0;
-    double volume = 0;
+    double volume_weighted_sum=0;
+    double volume=0;
 
-    Order_book(Params& params);
+    Order_book( Params& params);
 
-    void add_order(std::vector<Agent*>& agents, const Order& new_order);
+    void add_order(std::vector<Agent*>& agents, const Order& order);
 };
 
 struct SimTimes {
@@ -141,22 +136,8 @@ double uniform01(std::mt19937& rng);
 
 // Model function declarations
 std::vector<Agent*> initialize_agents( Params& params, std::mt19937& rng);
-
-Counts count_agents( std::vector<Agent*>& agents, Params& params);
-
+Counts count_agents( std::vector<Agent*>& agents);
 double sentiment( Counts& counts);
-
-Probs compute_probabilities(
-     Params& params,
-     Market& market,
-     Counts& counts
-);
-
-void update_agents(
-    Params& params,
-    std::vector<Agent*>& agents,
-     Probs& probs,
-    std::mt19937& rng
-);
-
+Probs compute_probabilities(Params& params, Market& market, Counts& counts);
+Counts update_agents(Params& params, std::vector<Agent*>& agents, Probs& probs, std::mt19937& rng);
 double update_price(Order_book& order_book);

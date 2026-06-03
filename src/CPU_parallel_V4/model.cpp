@@ -236,26 +236,24 @@ void update_agents( Params& params, std::vector<Agent*>& agents, Probs& probs, s
 
 //6 New orders
 
-void add_all_new_orders_thread(int index_start, int index_end, Market& market, Params& params, std::vector<Agent*>& agents, Order_book& order_book){
-
-    for(int i=index_start;i<index_end;i++){
-        Order* new_order= agents[i]->new_order(std::ref(market), std::ref(params));
-        if(new_order->quantity!=0){
-            order_book.add_order_thread_safe( std::ref(agents), new_order);
+void add_all_new_orders_thread(int index_start, int index_end, const Market& market, const Params& params, std::vector<Agent*>& agents, Order_book& local_order_book) {
+    
+    for (int i = index_start; i < index_end; i++) {
+        Order new_order = agents[i]->new_order(market, params);
+        if (new_order.quantity != 0.0) {
+            local_order_book.add_order(agents,new_order); 
         }
-        else{
-            delete new_order;
-        }
-        
     }
+    
 
 }
+
 void add_all_new_orders(Market& market, Params& params, std::vector<Agent*>& agents, Order_book& order_book){
 
     int nb_threads =params.nb_threads;
     int chunk_size = params.chunk_size;
     std::vector<std::thread> vector_threads(nb_threads);
-    
+    std::vector<Order_book> vector_local_order_books(nb_threads,params);
 
     for(int i=0; i<nb_threads;i++){
         int index_start= i*chunk_size;
@@ -264,31 +262,36 @@ void add_all_new_orders(Market& market, Params& params, std::vector<Agent*>& age
         if(i==nb_threads-1){
             index_end=params.N;
         }   
-        vector_threads[i]= std::thread(add_all_new_orders_thread,index_start,index_end, std::ref(market),  std::ref(params), std::ref(agents),std::ref(order_book));
+        vector_local_order_books[i]=Order_book(params);
+        vector_threads[i]= std::thread(add_all_new_orders_thread,index_start,index_end, std::ref(market),  std::ref(params), std::ref(agents), std::ref(vector_local_order_books[i]));
     }
+
     for(int i=0; i<nb_threads;i++){
         vector_threads[i].join();
+        for(const Order& new_order : vector_local_order_books[i].order_storage){
+            order_book.add_order(agents, new_order);
+        }
+        order_book.volume+= vector_local_order_books[i].volume;
+        order_book.volume_weighted_sum+= vector_local_order_books[i].volume_weighted_sum;
     }
-    
 }
 
-
-
 // #7 Price update
-
 double update_price(Order_book& order_book) {
     if(order_book.volume==0){
         return 100;
     }
 
     return order_book.volume_weighted_sum/order_book.volume;
-
 }
 
 
 // Simulation loop
 //Parallel
 SimTimes run_simulation( Params& params) {
+    
+    params.nb_threads = std::max(1, std::min(params.nb_threads, params.N));
+    params.chunk_size = (params.N + params.nb_threads - 1) / params.nb_threads;
     
     std::mt19937 rng(params.seed);
     std::normal_distribution<double> normal_dist(0.0, params.sigma_pf);
@@ -347,8 +350,8 @@ SimTimes run_simulation( Params& params) {
 
 
         auto t3 = std::chrono::high_resolution_clock::now();
-        add_all_new_orders(std::ref(market),std::ref (params),std::ref (agents),std::ref(order_book));
-        double new_price = update_price(std::ref(order_book));
+        add_all_new_orders(market, params, agents, order_book);
+        double new_price = update_price(order_book);
         time_adding += std::chrono::duration<double, std::milli>(
             std::chrono::high_resolution_clock::now() - t3).count();
 
