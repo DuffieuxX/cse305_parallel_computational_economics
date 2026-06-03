@@ -21,8 +21,8 @@ aggressiveness(half_normal(rng,0,params.sigma_aggressiveness))
 
 Order_book::Order_book(Params& params) {
     this->order_storage.reserve(params.N);
-    this->bids.reserve(params.N / 2);
-    this->asks.reserve(params.N / 2);
+    this->bids.reserve(params.N);
+    this->asks.reserve(params.N);
 }
 
 
