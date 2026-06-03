@@ -55,7 +55,7 @@ struct Agent{
     
     Agent(Agent_type type,int agent_id,Params& params,std::mt19937& rng);
     
-    Order* new_order(Market& market, Params& params);
+    Order new_order(const Market& market, const Params& params) const;
 };
 
 
@@ -92,16 +92,20 @@ struct Order{
 };
 
 struct Order_book {
+    std::vector<Order> order_storage; //will store the real orders
+
     std::vector<Order*> bids;
     std::vector<Order*> asks;
 
-    double volume_weighted_sum=0;
-    double volume=0;
+    std::size_t bid_head = 0;
+    std::size_t ask_head = 0;
 
-    Order_book( Params& params);
-    ~Order_book();
+    double volume_weighted_sum = 0;
+    double volume = 0;
 
-    void add_order(std::vector<Agent*>& agents, Order* new_order);
+    Order_book(Params& params);
+
+    void add_order(std::vector<Agent*>& agents, const Order& new_order);
 };
 
 struct SimTimes {

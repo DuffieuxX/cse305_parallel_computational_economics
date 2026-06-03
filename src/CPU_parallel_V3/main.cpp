@@ -12,6 +12,9 @@ int main(int argc, char* argv[]) {
         if (arg == "--agents" && i + 1 < argc) {
             params.N = std::stoi(argv[++i]);
         }
+        else if (arg == "--threads" && i + 1 < argc) {
+            params.nb_threads = std::stoi(argv[++i]);
+        }
         else if (arg == "--steps" && i + 1 < argc) {
             params.T = std::stoi(argv[++i]);
         }
