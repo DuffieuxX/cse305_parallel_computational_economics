@@ -114,20 +114,9 @@ struct SimTimes {
     double adding   = 0;
 };
 
-
-
-
 // declarations of output functions
 void write_header(std::ofstream& out);
-
-void write_row(
-    std::ofstream& out,
-    int t,
-    Market market,
-    double new_price,
-    double epsilon,
-    Counts counts
-);
+void write_row(std::ofstream& out, int t, Market market, double new_pric, double epsilon, Counts counts);
 
 // declarations of main simulation loop
 SimTimes run_simulation( Params& params);
@@ -141,22 +130,8 @@ double uniform01(std::mt19937& rng);
 
 // Model function declarations
 std::vector<Agent*> initialize_agents( Params& params, std::mt19937& rng);
-
 Counts count_agents( std::vector<Agent*>& agents, Params& params);
-
 double sentiment( Counts& counts);
-
-Probs compute_probabilities(
-     Params& params,
-     Market& market,
-     Counts& counts
-);
-
-void update_agents(
-    Params& params,
-    std::vector<Agent*>& agents,
-     Probs& probs,
-    std::mt19937& rng
-);
-
+Probs compute_probabilities(Params& params, Market& market, Counts& counts);
+Counts update_agents(Params& params, std::vector<Agent*>& agents, Probs& probs, std::mt19937& rng);
 double update_price(Order_book& order_book);
