@@ -51,7 +51,9 @@ Order Agent::new_order(Market& market, Params& params){
 
     if(this->vector_type[asset_id]==Agent::Agent_type::Optimist){
         double limit_price =market.p*(1+this->aggressiveness);
+        this->cash_lock.lock();
         double quantity =std::min(this->chartist_order_size, this->cash/limit_price);
+        this->cash_lock.unlock();
         bool buy=true;
         return Order(buy, quantity, limit_price, this->agent_id);
     }
@@ -68,7 +70,9 @@ Order Agent::new_order(Market& market, Params& params){
             bool buy=true;
             double limit_price= market.pf*(1+this->aggressiveness/4);
             double fundamentalist_order_size = this->chartist_order_size * (1.0 + params.gamma_f * std::abs(m_t));
+            this->cash_lock.lock();
             double quantity = std::min(fundamentalist_order_size, this->cash/limit_price);
+            this->cash_lock.unlock();
 
             return Order(buy,quantity,limit_price,this->agent_id);
         }
@@ -89,6 +93,20 @@ Order Agent::new_order(Market& market, Params& params){
 }
 
 
+void lock_two(Agent* a, Agent* b) {
+    if (a->agent_id < b->agent_id) {
+        a->cash_lock.lock();
+        b->cash_lock.lock();
+    } else {
+        b->cash_lock.lock();
+        a->cash_lock.lock();
+    }
+}
+
+void unlock_two(Agent* a, Agent* b) {
+    a->cash_lock.unlock();
+    b->cash_lock.unlock();
+}
 
 void Order_book::add_order(std::vector<Agent*>& agents, const Order& new_order_) {
     Order new_order = new_order_;
@@ -105,15 +123,19 @@ void Order_book::add_order(std::vector<Agent*>& agents, const Order& new_order_)
     bool buy = new_order.buy;
     if(buy){
 
-        if(agent_new_order-> cash<1e-9){
-            return;
-        }
         while(new_order.quantity > 0.0 && this->ask_head < this->asks.size()){
-
             Order* best_ask = this->asks[this->ask_head];
             Agent* agent_best_ask=agents[best_ask->agent_id];
 
             if(best_ask->price<=new_order.price){
+                
+                lock_two(agent_new_order, agent_best_ask);
+
+                if(agent_new_order-> cash<1e-9){
+                    unlock_two(agent_new_order, agent_best_ask);
+                    return;
+                }
+
                 double price_trade = best_ask->price;
                 double quantity_trade = std::min({best_ask->quantity, new_order.quantity, agent_new_order-> cash/price_trade});
 
@@ -128,6 +150,8 @@ void Order_book::add_order(std::vector<Agent*>& agents, const Order& new_order_)
                 
                 this->volume+=quantity_trade;
                 this->volume_weighted_sum+=quantity_trade * price_trade;
+
+                unlock_two(agent_new_order, agent_best_ask);
 
                 if (best_ask->quantity < 1e-9){
                     ++this->ask_head;
@@ -157,7 +181,10 @@ void Order_book::add_order(std::vector<Agent*>& agents, const Order& new_order_)
 
             if (best_bid->price >= new_order.price) {
 
+                lock_two(agent_new_order, agent_best_bid);
+
                 if (agent_best_bid->cash < 1e-9) {
+                    unlock_two(agent_new_order, agent_best_bid);
                     ++this->bid_head;
                     continue;
                 }
@@ -179,6 +206,8 @@ void Order_book::add_order(std::vector<Agent*>& agents, const Order& new_order_)
 
                 this->volume += quantity_trade;
                 this->volume_weighted_sum += quantity_trade * price_trade;
+
+                unlock_two(agent_new_order, agent_best_bid);
 
                 if (best_bid->quantity < 1e-9) {
                     ++this->bid_head;

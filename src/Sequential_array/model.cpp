@@ -218,6 +218,12 @@ SimTimes run_simulation( Params& params) {
 
         market.p_prev = market.p;
         market.p = new_price;
+
+
+        int active_orders = 0;
+
+    active_orders += order_book.order_storage.size();
+std::cerr << "t=" << t << " active_orders=" << active_orders << "\n";
     }
     for(Agent* a : agents) delete a;
 

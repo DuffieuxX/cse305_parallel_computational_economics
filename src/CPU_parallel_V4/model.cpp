@@ -9,7 +9,6 @@ void initialize_agent_thread(int index_start, int index_end, int n_plus, int n_m
     std::mt19937 rng_thread (seed_thread);
 
     for(int i=index_start;i< std::min(index_end,n_plus);i++){
-
         Agent* new_agent = new Agent(Agent::Agent_type::Optimist,i,params,rng_thread);
         agents[i] =(new_agent);
     }
@@ -82,7 +81,6 @@ void count_agents_thread(int index_start, int index_end,std::vector<Agent*>& age
             counter_fundamentalist++;
         }
     }
-
 }
 
 
@@ -91,6 +89,7 @@ Counts count_agents( std::vector<Agent*>& agents, Params& params) {
     int nb_threads =params.nb_threads;
     int chunk_size = params.chunk_size;
     std::vector<std::thread> vector_threads(nb_threads);
+    
     std::vector<int> counter_optimist(nb_threads,0);
     std::vector<int> counter_pessimist(nb_threads,0);
     std::vector<int> counter_fundamentalist(nb_threads,0);

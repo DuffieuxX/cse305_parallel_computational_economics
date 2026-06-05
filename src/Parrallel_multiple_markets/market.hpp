@@ -7,14 +7,17 @@
 #include <algorithm>
 #include <filesystem>
 #include <limits>
+#include<thread>
 
 // #1 Data structure 
 struct Params {
-    int nb_markets=5;
-    
+    int nb_markets=2;
+    int nb_threads=10; 
+        
     int N = 100000; //number of agents 
     int T = 1000; // number of time periods
     int seed = 42;
+    std::vector<int> vector_seeds;
     double dt = 1.0; //  period increments for strategy re-evaluation 
 
     double p0=100.00; // average initial price
@@ -53,6 +56,13 @@ struct Params {
 
         std::vector<double> vector_initial_inventory(this->nb_markets,this->asset_inventory);
         this->vector_initial_inventory=vector_initial_inventory;
+
+
+
+        this->vector_seeds.resize(this->nb_threads);
+        for(int i=0;i<this->nb_threads;i++){
+            this->vector_seeds[i]=this->seed+1+i;
+        }
     };
     
 };
@@ -68,6 +78,7 @@ struct Agent{
     std::vector<Agent_type> vector_type; //wether agent is optimist, pessimist or fundamentalist
     int agent_id;
     double cash; //quantity of cash of the agent >=0 (no borrowing)
+    std::mutex cash_lock;
  
     std::vector<double> asset_inventory; // quantity of asset held by client >=0 (no shorting)
     double chartist_order_size; // order size when the agent is a chartist 
@@ -176,9 +187,9 @@ double switch_probability(double nu, double U, double dt);
 double uniform01(std::mt19937& rng);
 
 // Model function declarations
-std::vector<Agent*> initialize_agents( Params& params, std::mt19937& rng);
+std::vector<Agent*> initialize_agents( Params& params, std::mt19937& rng, std::vector<std::mt19937>& vector_rng);
 std::vector<Counts>  count_agents( std::vector<Agent*>& agents,Params& params);
 std::vector<double> sentiment( std::vector<Counts>& vector_counts, Params& params);
 std::vector<Probs> compute_probabilities(Params& params, std::vector<Market>& vector_markets, std::vector<Counts>& vector_counts);
-std::vector<Counts> update_agents(Params& params, std::vector<Agent*>& agents, std::vector<Probs>& vector_probs, std::mt19937& rng);
+std::vector<Counts> update_agents(Params& params, std::vector<Agent*>& agents, std::vector<Probs>& vector_probs, std::vector<std::mt19937>& vector_rng);
 std::vector<double> update_prices(std::vector<Order_book>& order_book, Params& params, std::vector<Market>& vector_markets);
