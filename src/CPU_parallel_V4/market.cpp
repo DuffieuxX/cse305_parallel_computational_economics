@@ -19,10 +19,18 @@ aggressiveness(half_normal(rng,0,params.sigma_aggressiveness))
 {}
 
 
-Order_book::Order_book(Params& params) {
+Order_book::Order_book(Params& params, int nb_agents) {
+
+    if(nb_agents>0){
+        this->order_storage.reserve(nb_agents);
+        this->bids.reserve(nb_agents);
+        this->asks.reserve(nb_agents);
+
+    }else{
     this->order_storage.reserve(params.N);
     this->bids.reserve(params.N);
     this->asks.reserve(params.N);
+    }
 }
 
 

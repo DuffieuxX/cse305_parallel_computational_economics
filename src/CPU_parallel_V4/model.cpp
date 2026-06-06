@@ -261,7 +261,9 @@ void add_all_new_orders(Market& market, Params& params, std::vector<Agent*>& age
         if(i==nb_threads-1){
             index_end=params.N;
         }   
-        vector_local_order_books[i]=Order_book(params);
+        int nb_agents_in_batch =index_end-index_start;
+    
+        vector_local_order_books[i]=Order_book(params,nb_agents_in_batch);
         vector_threads[i]= std::thread(add_all_new_orders_thread,index_start,index_end, std::ref(market),  std::ref(params), std::ref(agents), std::ref(vector_local_order_books[i]));
     }
 

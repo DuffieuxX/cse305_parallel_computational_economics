@@ -338,48 +338,35 @@ void add_all_new_orders(std::vector<Market>& vector_markets, Params& params, std
 
     int nb_threads =params.nb_threads;
     int nb_markets=params.nb_markets;
+    int chunk_size=params.N/nb_threads;
+
     std::vector<std::thread> vector_threads(nb_threads);
-
     std::vector<Order_book> vector_order_book_batch(nb_threads);
-
-
-    int count_thread=0;
     for(int asset_id=0; asset_id<nb_markets;asset_id++){
-        int nb_thread_market=params.vector_nb_threads_per_market[asset_id];
-        int chunk_size_market=params.N/nb_thread_market;
 
-        for(int i=0; i<nb_thread_market;i++){
-            int index_start=i*chunk_size_market;
-            int index_end=index_start+chunk_size_market;
+        for(int i=0; i<nb_threads;i++){
+            int index_start=i*chunk_size;
+            int index_end=index_start+chunk_size;
 
-            if(i==nb_thread_market-1){
+            if(i==nb_threads-1){
                 index_end=params.N;
             }
             int nb_agents_in_batch=index_end-index_start;
             
-            vector_order_book_batch[count_thread]= Order_book(params,asset_id,nb_agents_in_batch);
-            vector_threads[count_thread]= std::thread(add_all_new_orders_per_market_batch,index_start, index_end, std::ref(vector_markets[asset_id]),std::ref(params), std::ref(agents), std::ref(vector_order_book_batch[count_thread]));
+            vector_order_book_batch[i]= Order_book(params,asset_id,nb_agents_in_batch);
+            vector_threads[i]= std::thread(add_all_new_orders_per_market_batch,index_start, index_end, std::ref(vector_markets[asset_id]),std::ref(params), std::ref(agents), std::ref(vector_order_book_batch[i]));
+        }  
 
-            count_thread++;
-        }   
-    }
-
-    count_thread=0;
-    for(int asset_id=0; asset_id<params.nb_markets;asset_id++){
-        int nb_thread_market=params.vector_nb_threads_per_market[asset_id];
-
-        for(int i=0;i<nb_thread_market;i++){
-            vector_threads[count_thread].join();
-            for( Order& new_order : vector_order_book_batch[count_thread].order_storage){
+        for(int i=0;i<nb_threads;i++){
+            vector_threads[i].join();
+            for( Order& new_order : vector_order_book_batch[i].order_storage){
                 vector_order_books[asset_id].add_order(agents, new_order);
             }
-            vector_order_books[asset_id].volume+= vector_order_book_batch[count_thread].volume;
-            vector_order_books[asset_id].volume_weighted_sum+= vector_order_book_batch[count_thread].volume_weighted_sum;
+            vector_order_books[asset_id].volume+= vector_order_book_batch[i].volume;
+            vector_order_books[asset_id].volume_weighted_sum+= vector_order_book_batch[i].volume_weighted_sum;
 
-            count_thread++;
         }
     }
-    
 }
    
 

@@ -11,7 +11,7 @@
 
 // #1 Data structure 
 struct Params {
-    int nb_markets=2;
+    int nb_markets=1;
     int nb_threads=10; 
         
     int N = 100000; //number of agents 

@@ -103,7 +103,7 @@ struct Order_book {
     double volume_weighted_sum = 0;
     double volume = 0;
 
-    Order_book(Params& params);
+    Order_book(Params& params, int nb_agents=0);
 
     void add_order(std::vector<Agent*>& agents, const Order& new_order);
 };
