@@ -139,7 +139,6 @@ void add_all_new_orders(Market& market, Params& params, std::vector<Agent*>& age
 }
 
 
-
 // #7 Price update
 
 double update_price(Order_book& order_book) {

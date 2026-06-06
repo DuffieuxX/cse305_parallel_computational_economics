@@ -230,9 +230,7 @@ Counts update_agents( Params& params, std::vector<Agent*>& agents, Probs& probs,
         vector_threads[i] = std::thread( update_agents_thread, index_start, index_end, std::ref(agents), std::ref(probs), seed_thread, std::ref(counter_optimist[i]), std::ref(counter_pessimist[i]), std::ref(counter_fundamentalist[i]) );
     }
 
-    for(int i=0; i<nb_threads;i++){
-        vector_threads[i].join();
-    }
+
     
     Counts counts_after;
 

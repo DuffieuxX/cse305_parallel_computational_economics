@@ -13,7 +13,7 @@
 struct Params {
 
     int N = 100000; //number of agents 
-    int T = 1000; // number of time periods
+    int T = 10; // number of time periods
 
     int nb_threads=10;
 
