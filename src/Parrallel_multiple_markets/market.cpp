@@ -104,8 +104,13 @@ void lock_two(Agent* a, Agent* b) {
 }
 
 void unlock_two(Agent* a, Agent* b) {
-    a->cash_lock.unlock();
-    b->cash_lock.unlock();
+   if (a->agent_id < b->agent_id) {
+        a->cash_lock.unlock();
+        b->cash_lock.unlock();
+    } else {
+        b->cash_lock.unlock();
+        a->cash_lock.unlock();
+    }
 }
 
 void Order_book::add_order(std::vector<Agent*>& agents, const Order& new_order_) {

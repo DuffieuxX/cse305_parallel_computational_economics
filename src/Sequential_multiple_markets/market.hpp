@@ -10,7 +10,7 @@
 
 // #1 Data structure 
 struct Params {
-    int nb_markets=5;
+    int nb_markets=4;
     
     int N = 100000; //number of agents 
     int T = 1000; // number of time periods

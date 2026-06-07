@@ -12,7 +12,7 @@
 struct Params {
 
     int N = 100000; //number of agents 
-    int T = 1000; // number of time periods
+    int T = 10; // number of time periods
     int seed = 42;
     double dt = 1.0; //  period increments for strategy re-evaluation 
     double p0 = 100.0; // initial price 

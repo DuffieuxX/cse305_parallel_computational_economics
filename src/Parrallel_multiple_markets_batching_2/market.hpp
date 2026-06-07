@@ -11,13 +11,13 @@
 
 // #1 Data structure 
 struct Params {
-    int nb_markets=5;
+    int nb_markets=4;
     int nb_threads=10; 
 
     std::vector<int> vector_nb_threads_per_market; 
         
     int N = 100000; //number of agents 
-    int T = 1000; // number of time periods
+    int T = 100; // number of time periods
     int seed = 42;
     std::vector<int> vector_seeds;
     double dt = 1.0; //  period increments for strategy re-evaluation 
