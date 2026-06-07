@@ -11,18 +11,19 @@ The computational complexity is that most agent-level operations are independent
 ```text
 .
 ├── CUDA/
-│   └── GPU_V3/
-│       ├── main.cpp
-│       ├── market.cpp
-│       ├── market.hpp
-│       ├── model.cu
-│       └── output.cpp
+│   ├── GPU_parallel_agent_level/
+│   ├── GPU_parallel_batching/
+│   └── GPU_parallel_batching_optimized/
 │
 ├── src/
-│   ├── Sequential_linked_list/
+│   ├── CPU_parallel_agent_level/
+│   ├── CPU_parallel_batching/
+│   ├── Parrallel_multiple_markets/
+│   ├── Parrallel_multiple_markets_batching/
+│   ├── Parrallel_multiple_markets_batching_2/
 │   ├── Sequential_array/
-│   ├── CPU_parallel_V3/
-│   ├── CPU_parallel_V4/
+│   ├── Sequential_linked_list/
+│   ├── Sequential_multiple_markets/
 │   ├── analysis.py
 │   └── simulation
 │
@@ -30,18 +31,241 @@ The computational complexity is that most agent-level operations are independent
 └── .gitignore
 ```
 
-The `src/` directory contains the CPU implementations.
-The `CUDA/` directory contains the CUDA implementation. Currently, `CUDA/GPU_V3` is the GPU version corresponding to `src/CPU_parallel_V3`.
+The `src/` directory contains the CPU implementations. The `CUDA/` directory contains the CUDA implementations. Folder names are written exactly as they appear in the GitHub repository.
 
 ## Implemented versions
 
-| Version                       | Description                                                                                                                                             |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/Sequential_linked_list/` | Sequential baseline with linked-list-style order-book storage.                                                                                          |
-| `src/Sequential_array/`       | Sequential baseline using array order-book storage.                                                                                              |
-| `src/CPU_parallel_V3/`        | CPU-parallel version. Agent-wise operations are parallelized with C++ threads; market clearing remains sequential.                                      |
-| `src/CPU_parallel_V4/`        | CPU-parallel version with batched market-clearing improvements. Orders are grouped before clearing to reduce part of the sequential insertion overhead. |
-| `CUDA/GPU_V3/`                | CUDA hybrid version. Agent-wise operations run on GPU; market clearing remains sequential on CPU.                                                       |
+| Version                                      | Description                                                                                                                                    |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/Sequential_linked_list/`                | Sequential baseline with linked-list-style order-book storage.                                                                                 |
+| `src/Sequential_array/`                      | Sequential baseline using array/vector order-book storage.                                                                                     |
+| `src/Sequential_multiple_markets/`           | Sequential extension with several assets and one order book per asset.                                                                         |
+| `src/CPU_parallel_agent_level/`              | CPU-parallel version where agent-level operations are parallelized with C++ threads while market clearing remains sequential.                  |
+| `src/CPU_parallel_batching/`                 | CPU batching version where agents are split into batches, local order books are cleared in parallel, and residual orders are merged afterward. |
+| `src/Parrallel_multiple_markets/`            | Exact multiple-market parallel model where different markets are processed in parallel, with locks on shared agent cash.                       |
+| `src/Parrallel_multiple_markets_batching/`   | Multiple-market batching version where each market uses batch-level parallel clearing.                                                         |
+| `src/Parrallel_multiple_markets_batching_2/` | Alternative multiple-market batching implementation used for experimentation.                                                                  |
+| `CUDA/GPU_parallel_agent_level/`             | CUDA version of the agent-level parallel architecture.                                                                                         |
+| `CUDA/GPU_parallel_batching/`                | CUDA version of the batching architecture.                                                                                                     |
+| `CUDA/GPU_parallel_batching_optimized/`      | Optimized CUDA batching implementation.                                                                                                        |
+
+## Parallelization structure
+
+| Step                               | Agent-level CPU/GPU models | Batching models                       | Multiple-market models                  |
+| ---------------------------------- | -------------------------- | ------------------------------------- | --------------------------------------- |
+| Agent initialization               | Parallelized               | Parallelized                          | Parallelized                            |
+| Fundamental value update           | CPU                        | CPU                                   | CPU                                     |
+| Agent counting                     | Parallelized               | Parallelized                          | Parallelized                            |
+| Transition probability computation | CPU                        | CPU                                   | CPU                                     |
+| Agent type update                  | Parallelized               | Parallelized                          | Parallelized                            |
+| Candidate order generation         | Parallelized               | Parallelized inside batches           | Parallelized by market or batch         |
+| Market clearing                    | Sequential                 | Local batch clearing + residual merge | Parallel by market or batched by market |
+| Price update                       | CPU                        | CPU                                   | CPU                                     |
+| Output writing                     | CPU                        | CPU                                   | CPU                                     |
+
+Market clearing is the main computational bottleneck because the order book is stateful and order-dependent. Inserting one order modifies the book, changes agent inventories and cash, and affects subsequent matches.
+
+## CPU configuration
+
+In the CPU-parallel versions, the number of CPU threads is controlled by `Params::nb_threads` in `market.hpp`.
+
+Agent-level parallelism uses a static block decomposition over the agent vector. Each thread processes a contiguous interval of agents, and the last thread receives the remaining agents when `N` is not exactly divisible by the number of threads.
+
+In the batching versions, agents are split into batches. Each batch builds and clears a local order book. The remaining orders are then merged into a common order book. This relaxes strict global first-come-first-served clearing but reduces the cost of repeated sorted insertions.
+
+In the multiple-market versions, each asset has its own market and order book. The exact multiple-market model parallelizes across markets. The batching multiple-market model applies the batch-clearing logic within markets.
+
+## CUDA configuration
+
+In the CUDA versions, GPU kernels map threads to agents for agent-wise operations such as counting, updating, and order generation. Market clearing remains partly or fully CPU-side depending on the version because the order book is sequential and stateful.
+
+The default CUDA configuration follows the standard pattern:
+
+```cpp
+threads = 256;
+blocks = (N + threads - 1) / threads;
+```
+
+This creates enough GPU threads to cover all agents, while excess threads return immediately.
+
+## Build instructions
+
+### CPU versions
+
+Sequential linked-list baseline:
+
+```bash
+cd src/Sequential_linked_list
+g++ -O3 -DNDEBUG -std=c++20 -pthread main.cpp model.cpp market.cpp output.cpp -o simulation
+./simulation --agents 10000 --steps 100 --time
+```
+
+Sequential array baseline:
+
+```bash
+cd src/Sequential_array
+g++ -O3 -DNDEBUG -std=c++20 -pthread main.cpp model.cpp market.cpp output.cpp -o simulation
+./simulation --agents 10000 --steps 100 --time
+```
+
+Sequential multiple-markets model:
+
+```bash
+cd src/Sequential_multiple_markets
+g++ -O3 -DNDEBUG -std=c++20 -pthread main.cpp model.cpp market.cpp output.cpp -o simulation
+./simulation --agents 10000 --steps 100 --time
+```
+
+CPU parallel agent-level model:
+
+```bash
+cd src/CPU_parallel_agent_level
+g++ -O3 -DNDEBUG -std=c++20 -pthread main.cpp model.cpp market.cpp output.cpp -o simulation
+./simulation --agents 10000 --steps 100 --time
+```
+
+CPU batching model:
+
+```bash
+cd src/CPU_parallel_batching
+g++ -O3 -DNDEBUG -std=c++20 -pthread main.cpp model_v4.cpp market.cpp output.cpp -o simulation
+./simulation --agents 10000 --steps 100 --time
+```
+
+Exact parallel multiple-markets model:
+
+```bash
+cd src/Parrallel_multiple_markets
+g++ -O3 -DNDEBUG -std=c++20 -pthread main.cpp model.cpp market.cpp output.cpp -o simulation
+./simulation --agents 10000 --steps 100 --time
+```
+
+Multiple-market batching model:
+
+```bash
+cd src/Parrallel_multiple_markets_batching
+g++ -O3 -DNDEBUG -std=c++20 -pthread main.cpp model.cpp market.cpp output.cpp -o simulation
+./simulation --agents 10000 --steps 100 --time
+```
+
+Alternative multiple-market batching model:
+
+```bash
+cd src/Parrallel_multiple_markets_batching_2
+g++ -O3 -DNDEBUG -std=c++20 -pthread main.cpp model.cpp market.cpp output.cpp -o simulation
+./simulation --agents 10000 --steps 100 --time
+```
+
+### CUDA versions
+
+On the university computers, compile CUDA versions with `nvcc`.
+
+GPU parallel agent-level model:
+
+```bash
+cd CUDA/GPU_parallel_agent_level
+
+/usr/local/cuda/bin/nvcc -O3 -std=c++17 \
+  main.cpp model.cu market.cpp output.cpp \
+  -o simulation
+
+./simulation --agents 10000 --steps 100 --time
+```
+
+GPU parallel batching model:
+
+```bash
+cd CUDA/GPU_parallel_batching
+
+/usr/local/cuda/bin/nvcc -O3 -std=c++17 \
+  main.cpp model.cu market.cpp output.cpp \
+  -o simulation
+
+./simulation --agents 10000 --steps 100 --time
+```
+
+GPU parallel batching optimized model:
+
+```bash
+cd CUDA/GPU_parallel_batching_optimized
+
+/usr/local/cuda/bin/nvcc -O3 -std=c++17 \
+  main.cpp model.cu market.cpp output.cpp \
+  -o simulation
+
+./simulation --agents 10000 --steps 100 --time
+```
+
+Large-run example:
+
+```bash
+./simulation --agents 500000 --steps 10 --time
+```
+
+## Runtime options
+
+| Option          | Meaning                                            |
+| --------------- | -------------------------------------------------- |
+| `--agents N`    | Number of agents                                   |
+| `--steps T`     | Number of simulation time steps                    |
+| `--seed S`      | Random seed                                        |
+| `--output FILE` | Output CSV path                                    |
+| `--sigma-pf X`  | Volatility of the fundamental value                |
+| `--time`        | Print timing information                           |
+| `--runs K`      | Repeat the simulation `K` times and print averages |
+
+Example:
+
+```bash
+./simulation --agents 50000 --steps 100 --time --runs 5
+```
+
+## Benchmarking
+
+The report benchmark tables were produced by running each model several times with fixed values of `N`, `T`, thread counts, and seeds. The GitHub repository focuses on the simulation implementations and their standard `main.cpp` entry points. Therefore, to reproduce a model run from the repository, compile the corresponding folder and execute the generated `simulation` program with the desired command-line parameters.
+
+Example comparison between the agent-level CPU and GPU versions:
+
+```bash
+cd src/CPU_parallel_agent_level
+g++ -O3 -DNDEBUG -std=c++20 -pthread main.cpp model.cpp market.cpp output.cpp -o simulation
+./simulation --agents 500000 --steps 10 --time
+
+cd ../../CUDA/GPU_parallel_agent_level
+/usr/local/cuda/bin/nvcc -O3 -std=c++17 \
+  main.cpp model.cu market.cpp output.cpp \
+  -o simulation
+./simulation --agents 500000 --steps 10 --time
+```
+
+
+## Terminal timing output
+
+With `--time`, the program prints a runtime summary such as:
+
+```text
+Simulation completed.
+Run 1: 2097.15 ms  (counting=56.2052 ms  updating=42.5583 ms  adding=1980.3 ms)
+```
+
+The timing fields have the following interpretation:
+
+| Field               | Meaning                                                                       |
+| ------------------- | ----------------------------------------------------------------------------- |
+| `counting`          | Time spent counting optimists, pessimists, and fundamentalists.               |
+| `updating`          | Time spent updating agent types.                                              |
+| `adding`            | Time spent generating orders and processing market clearing.                  |
+| `market_processing` | In multiple-market models, order generation plus per-market clearing.         |
+| `order_generation`  | In batching models, order creation plus local batch clearing when applicable. |
+| `clearing`          | In batching models, residual/global clearing after local batch clearing.      |
+
+
+
+
+
+
+
+
 
 ## Model
 
@@ -191,162 +415,3 @@ p(t+1)=
 $$
 
 If no trade occurs, the implementation uses the fallback price defined in the code.
-
-## Parallelization structure
-
-| Step                               | `CPU_parallel_V3` | `CUDA/GPU_V3`                         |
-| ---------------------------------- | ----------------- | ------------------------------------- |
-| Agent initialization               | CPU threads       | GPU                                   |
-| Fundamental value update           | CPU               | CPU                                   |
-| Agent counting                     | CPU threads       | GPU reduction + CPU final aggregation |
-| Transition probability computation | CPU               | CPU                                   |
-| Agent type update                  | CPU threads       | GPU                                   |
-| Candidate order generation         | CPU threads       | GPU                                   |
-| Market clearing                    | CPU sequential    | CPU sequential                        |
-| Price update                       | CPU               | CPU                                   |
-| Output writing                     | CPU               | CPU                                   |
-
-Market clearing is kept sequential since order book is stateful and order-dependent. Inserting one order modify the book, change agent inventories and cash, and affect subsequent matches.
-
-## CPU configuration
-
-In `CPU_parallel_V3`, the number of CPU threads is controlled by `Params::nb_threads` in `market.hpp`.
-
-We use a static block decomposition:
-
-```cpp
-chunk_size = N / nb_threads;
-```
-
-Each thread processes a contiguous interval of agents. The last thread receives the remaining agents when (N) is not exactly divisible by the number of threads.
-
-In `CPU_parallel_V3`, threads are used for:
-
-* agent initialization;
-* agent counting;
-* agent type update;
-* candidate order generation.
-
-After candidate orders are generated, the main thread joins the worker threads and inserts orders into the order book sequentially.
-
-To benchmark different CPU thread counts, edit `nb_threads` in `market.hpp`.
-
-## CUDA configuration
-
-In `CUDA/GPU_V3`, each CUDA kernel maps one GPU thread to one agent.
-
-The default configuration is
-
-```cpp
-threads = 256;
-blocks = (N + threads - 1) / threads;
-```
-
-So for (N) agents, the grid contains enough blocks to cover all agents, and excess threads return immediately. The choice of 256 threads per block corresponds to 8 warps per block and is also convenient for the block-level reduction used in agent counting.
-
-In this CUDA version, we use managed memory for the main `Agent*` and `Order*` arrays to allow both GPU kernels and CPU market clearing to access the same data.
-
-
-## Build instructions
-
-### CPU versions
-
-Example for `CPU_parallel_V3`:
-
-```bash
-cd src/CPU_parallel_V3
-g++ -O3 -std=c++17 main.cpp model.cpp market.cpp output.cpp -o simulation
-```
-
-Run:
-
-```bash
-./simulation --agents 10000 --steps 100 --time
-```
-
-Example for `CPU_parallel_V4`:
-
-```bash
-cd src/CPU_parallel_V4
-g++ -O3 -std=c++17 main.cpp model.cpp market.cpp output.cpp -o simulation
-./simulation --agents 10000 --steps 100 --time
-```
-
-### CUDA version
-
-On the school machines, compile with:
-
-```bash
-cd CUDA/GPU_V3
-
-/usr/local/cuda/bin/nvcc -arch=sm_60 -std=c++17 \
-  -I/usr/local/cuda/include \
-  main.cpp model.cu market.cpp output.cpp \
-  -o simulation
-```
-
-Run:
-
-```bash
-./simulation --agents 10000 --steps 100 --time
-```
-
-Large benchmark example:
-
-```bash
-./simulation --agents 500000 --steps 10 --time
-```
-
-## Runtime options
-
-| Option          | Meaning                                            |
-| --------------- | -------------------------------------------------- |
-| `--agents N`    | Number of agents                                   |
-| `--steps T`     | Number of simulation time steps                    |
-| `--seed S`      | Random seed                                        |
-| `--output FILE` | Output CSV path                                    |
-| `--sigma-pf X`  | Volatility of the fundamental value                |
-| `--time`        | Print timing information                           |
-| `--runs K`      | Repeat the simulation `K` times and print averages |
-
-Example:
-
-```bash
-./simulation --agents 50000 --steps 100 --time --runs 5
-```
-
-## Benchmarking
-
-We run CPU and GPU versions on the same machine for fair comparaison.
-
-Example:
-
-```bash
-cd src/CPU_parallel_V3
-./simulation --agents 500000 --steps 10 --time
-
-cd ../../CUDA/GPU_V3
-./simulation --agents 500000 --steps 10 --time
-```
-
-Exemples of benchmark:
-
-|      N |  T | Version           | Total ms | Counting ms | Updating ms | Adding / clearing ms |
-| -----: | -: | ----------------- | -------: | ----------: | ----------: | -------------------: |
-| 500000 | 10 | `CPU_parallel_V3` |  32601.6 |       167.8 |       156.0 |              32178.0 |
-| 500000 | 10 | `CUDA/GPU_V3`     |  28571.2 |        42.6 |         1.3 |              28266.8 |
-
-The CUDA version strongly accelerates the agent-wise operations. The overall speedup is smaller because market clearing remains sequential and dominates runtime for large (N).
-
-## Terminal timing output
-
-With `--time`, the program prints a runtime summary:
-
-```text
-Simulation completed.
-Run 1: 2097.15 ms  (counting=56.2052 ms  updating=42.5583 ms  adding=1980.3 ms)
-
-And we define:
-counting: time spent counting optimists, pessimists, and fundamentalists.
-updating: time spent updating agents' types.
-adding: time spent generating orders, clearing the market, and updating the price.
