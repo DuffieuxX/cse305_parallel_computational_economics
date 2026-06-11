@@ -1,0 +1,4 @@
+model,version,N,T,run,seed,total_ms,avg_step_ms,counting_total_ms,probabilities_total_ms,updating_total_ms,order_generation_total_ms,clearing_total_ms,price_update_total_ms,output_total_ms,counting_avg_step_ms,probabilities_avg_step_ms,updating_avg_step_ms,order_generation_avg_step_ms,clearing_avg_step_ms,price_update_avg_step_ms,output_avg_step_ms,other_total_ms,other_avg_step_ms
+sequential,V1,10000,40,1,42,63.1743,1.57936,1.63404,0.010835,4.78596,4.3805,50.495,0.000791,0.00075,0.040851,0.000270875,0.119649,0.109512,1.26238,1.9775e-05,1.875e-05,1.86646,0.0466615
+sequential,V1,100000,40,1,42,2906.45,72.6613,11.2792,0.01621,30.8191,28.2299,2829.69,0.000626,0.001333,0.281979,0.00040525,0.770478,0.705748,70.7423,1.565e-05,3.3325e-05,6.41183,0.160296
+sequential,V1,500000,40,1,42,63383.2,1584.58,93.2985,0.008836,274.695,227.196,62750.8,0.000459,0.001749,2.33246,0.0002209,6.86736,5.6799,1568.77,1.1475e-05,4.3725e-05,37.289,0.932225
